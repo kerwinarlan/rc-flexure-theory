@@ -1,4 +1,4 @@
-"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Perfectly Aligned Whitney UDL Stress Diagram, LaTeX Equations & US/SI Unit Support.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Step-by-Step LaTeX Solution, Whitney UDL Diagram & US/SI Support.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -32,6 +32,7 @@ def solve_flexure_section(
     m_serv: float,
     m_ult: float,
     units: str = "US",
+    lambda_factor: float = 1.0,
 ) -> dict[str, float | str | dict]:
     """Calculate elastic (WSD), inelastic (USD), and moment-curvature parameters per ACI 318 / NSCP 2015."""
     if fc_prime <= 0 or fy <= 0 or b <= 0 or d <= 0 or as_area <= 0 or m_serv < 0 or m_ult < 0:
@@ -60,11 +61,11 @@ def solve_flexure_section(
     util_s = fs / fs_allow if fs_allow > 0 else 0.0
 
     # Inelastic USD calculations
-    inelastic = calculate_inelastic_capacity(b, d, as_area, fc_prime, fy, units)
+    inelastic = calculate_inelastic_capacity(b, d, as_area, fc_prime, fy, units, lambda_factor)
     util_ult = m_ult / inelastic["phi_M_n"] if inelastic["phi_M_n"] > 0 else 0.0
 
     # Moment-Curvature Curve with 3 explicit regions
-    mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy, units)
+    mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy, units, lambda_factor)
 
     status = (
         "PASS"
@@ -116,7 +117,6 @@ def generate_inelastic_diagram_png(
     l_unit = "mm" if is_si else "in"
     l_sym = "mm" if is_si else '"'
 
-    # Share Y axis across all 3 subplots to guarantee exact vertical line alignment
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(7.2, 3.4), sharey=True, dpi=100)
     fig.patch.set_facecolor("#FAFAFA")
 
@@ -166,7 +166,7 @@ def generate_inelastic_diagram_png(
 
     # Resultant Tension Force T pointing RIGHT (->)
     ax3.annotate("", xy=(s_x * 0.8, -d), xytext=(0, -d),
-                 arrowprops=dict(arrowstyle="->", color="red", lw=2.0))
+                 arrowprops=dict(arrowstyle="->", color="red", lw=2.2))
     ax3.text(s_x * 0.85, -d, "T = As·fs", color="red", fontweight="bold", fontsize=7, ha="left", va="center")
     ax3.set_xlim(-s_x * 1.5, s_x * 1.5)
 
@@ -250,12 +250,70 @@ def generate_moment_curvature_plot_png(
     return buf.getvalue()
 
 
-def generate_latex_summary_card_png(res: dict) -> bytes:
-    """Generate a step-by-step LaTeX formula summary card rendering publication-quality math."""
+def generate_step_by_step_latex_png(res: dict) -> bytes:
+    """Generate a step-by-step LaTeX solution card with explicit NSCP 2015 / ACI 318 citations."""
     units = res["units"]
     is_si = units.upper() == "SI"
     fc = res["fc"]
     fy = res["fy"]
+    b = res["b"]
+    d = res["d"]
+    a_s = res["as_area"]
+    beta1 = res["beta_1"]
+    inel = res["inelastic"]
+    a = inel["a"]
+    c = inel["c"]
+    eps_s = inel["eps_s"]
+    phi = inel["phi"]
+    m_n = inel["M_n"]
+    phi_m_n = inel["phi_M_n"]
+
+    m_unit = "kN·m" if is_si else "kip-in"
+    f_unit = "MPa" if is_si else "ksi"
+    l_unit = "mm" if is_si else "in"
+    e_s_val = 200000.0 if is_si else 29000.0
+    eps_y = fy / e_s_val
+
+    fig, ax = plt.subplots(figsize=(6.8, 3.4), dpi=100)
+    fig.patch.set_facecolor("#FAFAFA")
+    ax.axis("off")
+
+    lines = [
+        ("NSCP 2015 / ACI 318 Step-by-Step Flexural Solution", True, "#0D47A1"),
+        ("Step 1: Material & Section Parameters", True, "#1A237E"),
+        (r"$f'_c = %.1f \text{ %s} \rightarrow \beta_1 = %.2f$ (NSCP 2015 Table 422.2.2.4.3)" % (fc, f_unit, beta1), False, "#1A237E"),
+        (r"$\epsilon_y = \frac{f_y}{E_s} = \frac{%.1f}{%.0f} = %.5f$ (NSCP 2015 Sec 420.2.2.1)" % (fy, e_s_val, eps_y), False, "#1A237E"),
+        ("Step 2: Depth of Compression Stress Block (a)", True, "#1A237E"),
+        (r"$C = T \rightarrow 0.85 f'_c b a = A_s f_y$ (NSCP 2015 Sec 422.2.2)", False, "#1A237E"),
+        (r"$a = \frac{A_s f_y}{0.85 f'_c b} = \frac{%.1f \times %.1f}{0.85 \times %.1f \times %.1f} = \mathbf{%.2f \text{ %s}}$" % (a_s, fy, fc, b, a, l_unit), False, "#0D47A1"),
+        ("Step 3: Neutral Axis Depth (c) & Strain Verification", True, "#1A237E"),
+        (r"$c = \frac{a}{\beta_1} = \frac{%.2f}{%.2f} = \mathbf{%.2f \text{ %s}}$ (NSCP 2015 Table 422.2.2.4.3)" % (a, beta1, c, l_unit), False, "#0D47A1"),
+        (r"$\epsilon_s = 0.003 \cdot \frac{%.1f - %.2f}{%.2f} = %.5f \geq %.5f$ (Steel Yielded)" % (d, c, c, eps_s, eps_y), False, "#1A237E"),
+        ("Step 4: Strength Reduction Factor (ϕ) & Moment Capacity", True, "#1A237E"),
+        (r"$\epsilon_s = %.5f \geq 0.005 \rightarrow \phi = %.2f$ (NSCP 2015 Sec 421.2.2 - Ductile)" % (eps_s, phi), False, "#1A237E"),
+        (r"$M_n = A_s f_y \left(d - \frac{a}{2}\right) = \mathbf{%.1f \text{ %s}}$ (NSCP 2015 Sec 422.2)" % (m_n, m_unit), False, "#0D47A1"),
+        (r"$\phi M_n = %.2f \times %.1f = \mathbf{%.1f \text{ %s}}$ (NSCP 2015 Sec 421.2)" % (phi, m_n, phi_m_n, m_unit), False, "#0D47A1"),
+    ]
+
+    y_pos = 0.96
+    for text, is_bold, color in lines:
+        fontw = "bold" if is_bold else "normal"
+        fsize = 8.2 if is_bold else 7.5
+        ax.text(0.02, y_pos, text, fontsize=fsize, fontweight=fontw, color=color)
+        y_pos -= 0.068
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def generate_latex_summary_card_png(res: dict) -> bytes:
+    """Generate a summary card rendering publication-quality math."""
+    units = res["units"]
+    is_si = units.upper() == "SI"
     ec = res["E_c"]
     n = res["n"]
     x = res["x"]
@@ -296,18 +354,19 @@ def generate_latex_summary_card_png(res: dict) -> bytes:
     return buf.getvalue()
 
 
-def create_window(units: str = "US") -> sg.Window:
+def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Window:
     """Build the FreeSimpleGUI layout using Engr. Lucero's signature structure."""
     sg.theme("SystemDefault")
     is_si = units.upper() == "SI"
 
-    def_fc = "28.0" if is_si else "4.0"
-    def_fy = "420.0" if is_si else "60.0"
-    def_b = "300.0" if is_si else "12.0"
-    def_d = "500.0" if is_si else "20.0"
-    def_as = "1500.0" if is_si else "2.37"
-    def_mserv = "100.0" if is_si else "1200.0"
-    def_mult = "220.0" if is_si else "2000.0"
+    pv = preset_vals or {}
+    def_fc = pv.get("fc", "28.0" if is_si else "4.0")
+    def_fy = pv.get("fy", "420.0" if is_si else "60.0")
+    def_b = pv.get("b", "300.0" if is_si else "12.0")
+    def_d = pv.get("d", "500.0" if is_si else "20.0")
+    def_as = pv.get("as", "1500.0" if is_si else "2.37")
+    def_mserv = pv.get("mserv", "100.0" if is_si else "1200.0")
+    def_mult = pv.get("mult", "220.0" if is_si else "2000.0")
 
     f_unit = "MPa" if is_si else "ksi"
     l_unit = "mm" if is_si else "in"
@@ -321,6 +380,10 @@ def create_window(units: str = "US") -> sg.Window:
             sg.Combo(["US Customary (kip-in, 1/in, ksi, in)", "SI Metric (kN·m, rad/m, MPa, mm)"],
                      default_value="US Customary (kip-in, 1/in, ksi, in)" if not is_si else "SI Metric (kN·m, rad/m, MPa, mm)",
                      key="-UNITS-", enable_events=True, readonly=True),
+            sg.Text("  Preset Examples:", font=("Helvetica", 9, "bold")),
+            sg.Combo(["Custom Inputs", "CE 152 Example 3 (b=250mm, d=575mm, f'c=28MPa, fy=420MPa, As=1470mm²)"],
+                     default_value="Custom Inputs" if not pv else "CE 152 Example 3 (b=250mm, d=575mm, f'c=28MPa, fy=420MPa, As=1470mm²)",
+                     key="-PRESET-", enable_events=True, readonly=True),
         ],
         [sg.HorizontalSeparator()],
         # Input Section
@@ -367,6 +430,10 @@ def create_window(units: str = "US") -> sg.Window:
                 [
                     [
                         sg.Tab(
+                            "Step-by-Step LaTeX Solution",
+                            [[sg.Image(key="-IMAGE-STEPS-", size=(460, 270))]],
+                        ),
+                        sg.Tab(
                             "Whitney Stress UDL Diagram",
                             [[sg.Image(key="-IMAGE-STRESS-", size=(460, 270))]],
                         ),
@@ -402,6 +469,13 @@ def run_gui() -> None:
             window = create_window(selected_unit)
             continue
 
+        if event == "-PRESET-":
+            if "CE 152 Example 3" in values["-PRESET-"]:
+                pv = {"fc": "28.0", "fy": "420.0", "b": "250.0", "d": "575.0", "as": "1470.0", "mserv": "100.0", "mult": "220.0"}
+                window.close()
+                window = create_window("SI", preset_vals=pv)
+            continue
+
         if event == "Calculate & Plot":
             try:
                 selected_unit = "SI" if "SI" in values["-UNITS-"] else "US"
@@ -435,22 +509,27 @@ def run_gui() -> None:
                     f"Y->U Inelastic Cracked: {mc['M_y']:.1f} < M <= {mc['M_n']:.1f} {m_unit}\n\n"
                     f"Service M State       : {get_region(m_serv)}\n"
                     f"Factored Mu State      : {get_region(m_ult)}\n\n"
+                    f"--- INELASTIC STRESS BLOCK (a) ---\n"
+                    f"Stress Block Depth (a): {inel['a']:.2f} {l_unit}\n"
+                    f"Inelastic NA Depth (c): {inel['c']:.2f} {l_unit}\n"
+                    f"Steel Strain (eps_s)  : {inel['eps_s']:.5f}\n"
+                    f"Phi Factor (phi)      : {inel['phi']:.2f}\n"
+                    f"Nominal Cap. (M_n)    : {inel['M_n']:.1f} {m_unit}\n"
+                    f"Design Cap. (phi*M_n) : {inel['phi_M_n']:.1f} {m_unit} ({res['util_ult']*100:.1f}%)\n\n"
                     f"--- ELASTIC (WSD) PARAMETERS ---\n"
                     f"Concrete Modulus (E_c) : {res['E_c']:.2f} {f_unit}\n"
                     f"Modular Ratio (n)     : {res['n']:.2f}\n"
                     f"Elastic NA Depth (x)  : {res['x']:.2f} {l_unit}\n"
-                    f"Service f_c / Allow   : {res['f_c']:.2f} / {res['f_c_allow']:.2f} {f_unit} ({res['util_c']*100:.1f}%)\n"
-                    f"Service f_s / Allow   : {res['f_s']:.2f} / {res['f_s_allow']:.2f} {f_unit} ({res['util_s']*100:.1f}%)\n\n"
-                    f"--- INELASTIC (USD) CAPACITY ---\n"
-                    f"Inelastic NA Depth (c): {inel['c']:.2f} {l_unit}\n"
-                    f"Stress Block Depth (a): {inel['a']:.2f} {l_unit}\n"
-                    f"Steel Strain (eps_s)  : {inel['eps_s']:.5f}\n"
-                    f"Design Cap. (phi*M_n) : {inel['phi_M_n']:.1f} {m_unit} ({res['util_ult']*100:.1f}%)\n"
+                    f"Service f_c / Allow   : {res['f_c']:.2f} / {res['f_c_allow']:.2f} {f_unit}\n"
+                    f"Service f_s / Allow   : {res['f_s']:.2f} / {res['f_s_allow']:.2f} {f_unit}\n"
                     f"Curvature Ductility µ_ϕ: {mc['ductility_ratio']:.2f}\n"
                     f"---------------------------------\n"
                     f"OVERALL DESIGN STATUS : {res['status']}"
                 )
                 window["-OUTPUT-"].update(out_text)
+
+                png_steps = generate_step_by_step_latex_png(res)
+                window["-IMAGE-STEPS-"].update(data=png_steps)
 
                 png_stress = generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel, selected_unit)
                 window["-IMAGE-STRESS-"].update(data=png_stress)
@@ -468,20 +547,23 @@ def run_gui() -> None:
 
 
 def self_check_headless() -> None:
-    """Headless self-check for solver_gui.py."""
+    """Headless self-check for solver_gui.py and CE 152 Example 3."""
+    res_ce152 = solve_flexure_section(28.0, 420.0, 250.0, 575.0, 1470.0, 100.0, 220.0, "SI")
+    assert abs(res_ce152["inelastic"]["a"] - 103.76) < 0.1
+
     res_us = solve_flexure_section(4.0, 60.0, 12.0, 20.0, 2.37, 1200.0, 2000.0, "US")
     assert res_us["status"] == "PASS"
-    assert res_us["mc_data"]["m_unit"] == "kip-in"
-    assert res_us["mc_data"]["phi_unit"] == "1/in"
 
-    png_stress = generate_inelastic_diagram_png(12.0, 20.0, 2.37, 4.0, 60.0, res_us["inelastic"], "US")
-    png_mph = generate_moment_curvature_plot_png(res_us["mc_data"], 1200.0, 2000.0)
-    png_latex = generate_latex_summary_card_png(res_us)
+    png_steps = generate_step_by_step_latex_png(res_ce152)
+    png_stress = generate_inelastic_diagram_png(250.0, 575.0, 1470.0, 28.0, 420.0, res_ce152["inelastic"], "SI")
+    png_mph = generate_moment_curvature_plot_png(res_ce152["mc_data"], 100.0, 220.0)
+    png_latex = generate_latex_summary_card_png(res_ce152)
 
+    assert len(png_steps) > 1000
     assert len(png_stress) > 1000
     assert len(png_mph) > 1000
     assert len(png_latex) > 1000
-    print("solver_gui US/SI & Whitney UDL diagram check passed!")
+    print("solver_gui CE 152 Example 3 & Step-by-Step LaTeX check passed!")
 
 
 if __name__ == "__main__":

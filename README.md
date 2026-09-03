@@ -5,8 +5,9 @@ Calculates fundamental elastic (WSD), inelastic (USD), and 3-region moment-curva
 ## About
 
 This repository provides core equations for concrete elastic modulus, modular ratio, neutral axis depth, working stresses, ultimate strength capacity ($\phi M_n$), and 3-region moment-curvature response.
+It solves classic university flexure problems including **CE 152 Example 3** ($b=250\text{ mm}, d=575\text{ mm}, f'_c=28\text{ MPa}, f_y=420\text{ MPa}, A_s=1470\text{ mm}^2 \rightarrow a=103.76\text{ mm}$).
 It supports both **US Customary units** ($\text{kip-in}, 1/\text{in}, \text{ksi}, \text{in}$) and **SI Metric units** ($\text{kN}\cdot\text{m}, \text{rad/m}, \text{MPa}, \text{mm}$).
-The application includes a desktop solver GUI with **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$, stretch reference lines) and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
+The application includes a desktop solver GUI with **Step-by-Step LaTeX Solution Cards**, **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$), and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
 It also includes an **NSCP 2015 OCR Indexer System** (`nscp_indexer.py`) for cover-to-cover PDF study and knowledge extraction.
 
 All calculations follow the National Structural Code of the Philippines (NSCP 2015, 7th Edition) and ACI 318.
@@ -57,7 +58,7 @@ $$\phi_u = \frac{\epsilon_u}{c} = \frac{0.003}{c}, \quad \mu_\phi = \frac{\phi_u
 ```
 rc-flexure-theory/
 ├── flexure.py                 # Core NSCP 2015 / ACI 318 flexure module (US/SI)
-├── solver_gui.py              # FreeSimpleGUI solver GUI with Whitney UDL plots & LaTeX cards
+├── solver_gui.py              # FreeSimpleGUI solver GUI with Step-by-Step LaTeX cards
 ├── nscp_indexer.py            # NSCP 2015 PDF OCR study & search tool
 ├── NSCP_AGENT_PROTOCOL.md     # Agent study protocol & review guidelines
 ├── PARAMETER_LEDGER.md        # Parameter provenance tracking table
@@ -86,11 +87,11 @@ python3 flexure.py
 
 Expected headless output:
 ```
-Self-check passed (US & SI):
-  US Customary: M_cr=480.3 kip-in, M_y=2534.0 kip-in, M_n=2596.2 kip-in
-  Curvatures: phi_cr=0.000012 1/in, phi_y=0.000154 1/in, phi_u=0.000732 1/in
+Self-check passed:
+  CE 152 Example 3: a = 103.76 mm (expected 103.76 mm), c = 122.08 mm
+  US Customary: M_cr=480.3 kip-in, M_n=2596.2 kip-in
   Ductility Ratio (mu_phi): 4.76
-solver_gui US/SI & Whitney UDL diagram check passed!
+solver_gui CE 152 Example 3 & Step-by-Step LaTeX check passed!
 ```
 
 ## Parameter Provenance

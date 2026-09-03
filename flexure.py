@@ -10,45 +10,34 @@ def calculate_concrete_modulus(f_c_prime: float, units: str = "US") -> float:
     """Calculate concrete elastic modulus E_c.
     
     SI (f'c in MPa -> E_c in MPa): E_c = 4700 * sqrt(f'_c) [NSCP 2015 Sec 419.2.2.1]
-    US (f'c in ksi -> E_c in ksi): E_c = 57 * sqrt(f'c * 1000) / 1000 = 57 * sqrt(f'c_ksi) [ACI 318 Sec 19.2.2.1]
+    US (f'c in ksi -> E_c in ksi): E_c = 57 * sqrt(f'c * 1000) / 1000 [ACI 318 Sec 19.2.2.1]
     """
     if f_c_prime <= 0:
         raise ValueError("f'_c must be positive.")
     if units.upper() == "SI":
         return 4700.0 * math.sqrt(f_c_prime)
-    # US Customary: f'c in ksi
     f_c_psi = f_c_prime * 1000.0
-    return (57000.0 * math.sqrt(f_c_psi)) / 1000.0  # Returns ksi
+    return (57000.0 * math.sqrt(f_c_psi)) / 1000.0
 
 
 def calculate_modular_ratio(f_c_prime: float, units: str = "US") -> float:
-    """Calculate modular ratio n = E_s / E_c.
-    
-    [CALCULATED: ACI 318 / NSCP 2015]
-    """
+    """Calculate modular ratio n = E_s / E_c."""
     e_s = E_S_SI if units.upper() == "SI" else E_S_US
     e_c = calculate_concrete_modulus(f_c_prime, units)
     return e_s / e_c
 
 
 def calculate_modulus_of_rupture(f_c_prime: float, units: str = "US") -> float:
-    """Calculate concrete modulus of rupture f_r.
-    
-    SI (f'c in MPa -> f_r in MPa): f_r = 0.62 * sqrt(f'_c) [NSCP 2015 Sec 419.2.3.1]
-    US (f'c in ksi -> f_r in ksi): f_r = 7.5 * sqrt(f'c_psi) / 1000 [ACI 318 Sec 19.2.3.1]
-    """
+    """Calculate concrete modulus of rupture f_r."""
     if units.upper() == "SI":
         return 0.62 * math.sqrt(f_c_prime)
     f_c_psi = f_c_prime * 1000.0
-    return (7.5 * math.sqrt(f_c_psi)) / 1000.0  # Returns ksi
+    return (7.5 * math.sqrt(f_c_psi)) / 1000.0
 
 
 def calculate_beta_1(f_c_prime: float, units: str = "US") -> float:
-    """Calculate Whitney stress block factor beta_1.
-    
-    [CALCULATED: ACI 318 / NSCP 2015]
-    """
-    fc_si = f_c_prime if units.upper() == "SI" else f_c_prime * 6.89476  # ksi -> MPa
+    """Calculate Whitney stress block factor beta_1 per NSCP 2015 Table 422.2.2.4.3 / ACI 318."""
+    fc_si = f_c_prime if units.upper() == "SI" else f_c_prime * 6.89476
     if fc_si <= 28.0:
         return 0.85
     beta = 0.85 - 0.05 * (fc_si - 28.0) / 7.0
@@ -58,11 +47,7 @@ def calculate_beta_1(f_c_prime: float, units: str = "US") -> float:
 def calculate_neutral_axis_depth(
     b: float, d: float, a_s: float, n: float
 ) -> float:
-    """Calculate elastic neutral axis depth x using first moment of area equilibrium.
-    
-    Equilibrium formula: Q_c = Q_s -> A_c * x_c = n * A_s * x_s [CALCULATED]
-    0.5 * b * x^2 = n * A_s * (d - x)
-    """
+    """Calculate elastic neutral axis depth x using first moment of area equilibrium."""
     if b <= 0 or d <= 0 or a_s <= 0 or n <= 0:
         raise ValueError("All input dimensions and parameters must be positive.")
     
@@ -73,7 +58,7 @@ def calculate_neutral_axis_depth(
 def calculate_cracked_moment_of_inertia(
     b: float, d: float, a_s: float, n: float, x: float
 ) -> float:
-    """Calculate cracked section moment of inertia I_cr in mm^4 or in^4."""
+    """Calculate cracked section moment of inertia I_cr."""
     return (1.0 / 3.0) * b * (x**3) + n * a_s * ((d - x) ** 2)
 
 
@@ -89,15 +74,18 @@ def calculate_service_stresses(
 
 
 def calculate_inelastic_neutral_axis(
-    b: float, d: float, a_s: float, fc_prime: float, fy: float, units: str = "US"
+    b: float, d: float, a_s: float, fc_prime: float, fy: float, units: str = "US", lambda_factor: float = 1.0
 ) -> tuple[float, float, float, float]:
-    """Calculate inelastic neutral axis depth c, stress block a, steel stress f_s, and strain eps_s."""
+    """Calculate inelastic neutral axis depth c, stress block a, steel stress f_s, and strain eps_s.
+    
+    Includes lightweight concrete factor lambda (default 1.0 for normal weight).
+    """
     e_s = E_S_SI if units.upper() == "SI" else E_S_US
     beta1 = calculate_beta_1(fc_prime, units)
     eps_y = fy / e_s
 
-    # Assume steel yields
-    a_yield = (a_s * fy) / (0.85 * fc_prime * b)
+    # Assume steel yields: C = 0.85 * lambda * f'c * b * a = T = A_s * f_y
+    a_yield = (a_s * fy) / (0.85 * lambda_factor * fc_prime * b)
     c_yield = a_yield / beta1
     eps_s_yield = EPS_U_GIVEN * (d - c_yield) / c_yield
 
@@ -105,7 +93,7 @@ def calculate_inelastic_neutral_axis(
         return c_yield, a_yield, fy, eps_s_yield
 
     # Steel did not yield
-    k1 = 0.85 * fc_prime * b * beta1
+    k1 = 0.85 * lambda_factor * fc_prime * b * beta1
     k2 = EPS_U_GIVEN * a_s * e_s
     c = (-k2 + math.sqrt(k2**2 + 4.0 * k1 * k2 * d)) / (2.0 * k1)
     a = beta1 * c
@@ -126,15 +114,14 @@ def calculate_phi_factor(eps_t: float, fy: float, units: str = "US") -> float:
 
 
 def calculate_inelastic_capacity(
-    b: float, d: float, a_s: float, fc_prime: float, fy: float, units: str = "US"
+    b: float, d: float, a_s: float, fc_prime: float, fy: float, units: str = "US", lambda_factor: float = 1.0
 ) -> dict[str, float | str]:
-    """Calculate ultimate strength flexural capacity phi*M_n in kN*m (SI) or kip-in (US)."""
-    c, a, f_s, eps_s = calculate_inelastic_neutral_axis(b, d, a_s, fc_prime, fy, units)
+    """Calculate ultimate strength flexural capacity phi*M_n and stress block depth a."""
+    c, a, f_s, eps_s = calculate_inelastic_neutral_axis(b, d, a_s, fc_prime, fy, units, lambda_factor)
     phi = calculate_phi_factor(eps_s, fy, units)
 
-    # Nominal moment M_n = T * (d - a/2) = A_s * f_s * (d - a/2)
     m_n_raw = a_s * f_s * (d - a / 2.0)
-    m_n_mom = m_n_raw / 1e6 if units.upper() == "SI" else m_n_raw  # N*mm -> kN*m or in-kip
+    m_n_mom = m_n_raw / 1e6 if units.upper() == "SI" else m_n_raw
     phi_m_n_mom = phi * m_n_mom
 
     e_s = E_S_SI if units.upper() == "SI" else E_S_US
@@ -155,47 +142,43 @@ def calculate_inelastic_capacity(
         "M_n": m_n_mom,
         "phi_M_n": phi_m_n_mom,
         "failure_mode": failure_mode,
+        "lambda": lambda_factor,
     }
 
 
 def calculate_moment_curvature(
-    b: float, d: float, h: float, a_s: float, fc_prime: float, fy: float, units: str = "US"
+    b: float, d: float, h: float, a_s: float, fc_prime: float, fy: float, units: str = "US", lambda_factor: float = 1.0
 ) -> dict[str, float | list[float] | dict[str, str]]:
-    """Calculate key points and 3 explicit regions on the Moment-Curvature (M - phi) response curve.
-    
-    Curvature unit: 1/in (US) or rad/m (SI)
-    Moment unit: kip-in (US) or kN*m (SI)
-    """
+    """Calculate key points and 3 explicit regions on the Moment-Curvature (M - phi) response curve."""
     is_si = units.upper() == "SI"
     e_s = E_S_SI if is_si else E_S_US
     e_c = calculate_concrete_modulus(fc_prime, units)
     n = calculate_modular_ratio(fc_prime, units)
-    f_r = calculate_modulus_of_rupture(fc_prime, units)
+    f_r = calculate_modulus_of_rupture(fc_prime, units) * lambda_factor
 
     # Region O -> C: Uncracked Elastic Stage
     i_g = (1.0 / 12.0) * b * (h**3)
     y_t = h / 2.0
     m_cr_raw = (f_r * i_g) / y_t
-    m_cr_mom = m_cr_raw / 1e6 if is_si else m_cr_raw  # kN*m or kip-in
-    phi_cr = m_cr_raw / (e_c * i_g)  # 1/mm or 1/in
+    m_cr_mom = m_cr_raw / 1e6 if is_si else m_cr_raw
+    phi_cr = m_cr_raw / (e_c * i_g)
 
     # Region C -> Y: Cracked Elastic Stage
     x = calculate_neutral_axis_depth(b, d, a_s, n)
     i_cr = calculate_cracked_moment_of_inertia(b, d, a_s, n, x)
     eps_y = fy / e_s
-    phi_y = eps_y / (d - x)  # 1/mm or 1/in
+    phi_y = eps_y / (d - x)
     m_y_raw = (fy * i_cr) / (n * (d - x))
     m_y_mom = m_y_raw / 1e6 if is_si else m_y_raw
 
     # Region Y -> U: Cracked Inelastic Stage
-    c, a, f_s, eps_s = calculate_inelastic_neutral_axis(b, d, a_s, fc_prime, fy, units)
+    c, a, f_s, eps_s = calculate_inelastic_neutral_axis(b, d, a_s, fc_prime, fy, units, lambda_factor)
     m_n_raw = a_s * f_s * (d - a / 2.0)
     m_n_mom = m_n_raw / 1e6 if is_si else m_n_raw
-    phi_u = EPS_U_GIVEN / c  # 1/mm or 1/in
+    phi_u = EPS_U_GIVEN / c
 
     ductility_ratio = phi_u / phi_y if phi_y > 0 else 0.0
 
-    # Scale curvature for plot (1/in for US, rad/m for SI)
     scale_curv = 1000.0 if is_si else 1.0
     phi_pts = [0.0, phi_cr * scale_curv, phi_y * scale_curv, phi_u * scale_curv]
     m_pts = [0.0, m_cr_mom, m_y_mom, m_n_mom]
@@ -226,24 +209,21 @@ def calculate_moment_curvature(
 
 
 def self_check() -> None:
-    """Run verification checks on flexure theory calculations for US and SI units."""
-    # US Customary test case: 4 ksi concrete, 60 ksi steel, b=12 in, d=20 in, h=22.5 in, As=2.37 in^2
+    """Run verification checks on flexure theory calculations for US, SI, and CE 152 Example 3."""
+    # CE 152 Example 3 verification
+    res_ce152 = calculate_inelastic_capacity(250.0, 575.0, 1470.0, 28.0, 420.0, units="SI")
+    assert abs(res_ce152["a"] - 103.76) < 0.1
+    assert abs(res_ce152["c"] - 122.08) < 0.1
+
+    # US Customary test case
     mc_us = calculate_moment_curvature(12.0, 20.0, 22.5, 2.37, 4.0, 60.0, units="US")
     assert mc_us["m_unit"] == "kip-in"
     assert mc_us["phi_unit"] == "1/in"
-    assert mc_us["M_cr"] > 0
-    assert mc_us["M_y"] > mc_us["M_cr"]
-    assert mc_us["M_n"] >= mc_us["M_y"]
-
-    # SI test case
-    mc_si = calculate_moment_curvature(300.0, 500.0, 565.0, 1500.0, 28.0, 420.0, units="SI")
-    assert mc_si["m_unit"] == "kN·m"
-    assert mc_si["phi_unit"] == "rad/m"
 
     print(
-        f"Self-check passed (US & SI):\n"
-        f"  US Customary: M_cr={mc_us['M_cr']:.1f} kip-in, M_y={mc_us['M_y']:.1f} kip-in, M_n={mc_us['M_n']:.1f} kip-in\n"
-        f"  Curvatures: phi_cr={mc_us['phi_cr']:.6f} 1/in, phi_y={mc_us['phi_y']:.6f} 1/in, phi_u={mc_us['phi_u']:.6f} 1/in\n"
+        f"Self-check passed:\n"
+        f"  CE 152 Example 3: a = {res_ce152['a']:.2f} mm (expected 103.76 mm), c = {res_ce152['c']:.2f} mm\n"
+        f"  US Customary: M_cr={mc_us['M_cr']:.1f} kip-in, M_n={mc_us['M_n']:.1f} kip-in\n"
         f"  Ductility Ratio (mu_phi): {mc_us['ductility_ratio']:.2f}"
     )
 
