@@ -4,7 +4,8 @@ Calculates fundamental elastic and flexural parameters for reinforced concrete b
 
 ## About
 
-This repository provides core equations for concrete elastic modulus, modular ratio, and working stresses.
+This repository provides core equations for concrete elastic modulus, modular ratio, neutral axis depth, and working stresses.
+The application includes a desktop solver GUI built with `FreeSimpleGUI` following Engr. Jaydee Lucero's design pattern.
 All calculations follow the National Structural Code of the Philippines (NSCP 2015, 7th Edition).
 
 ## Key Formulas (NSCP 2015 References)
@@ -40,6 +41,7 @@ $$f_s = \frac{n M (d - x)}{I_{cr}} \le 0.50 f_y \quad \text{[Steel Tensile Stres
 ```
 rc-flexure-theory/
 ├── flexure.py             # Core NSCP 2015 flexure calculation module
+├── solver_gui.py          # FreeSimpleGUI solver application
 ├── PARAMETER_LEDGER.md    # Parameter provenance tracking table
 ├── .gitignore             # Git ignore patterns
 └── README.md              # Project documentation
@@ -47,14 +49,20 @@ rc-flexure-theory/
 
 ## Quickstart
 
-Run the Python verification script:
-
+### Launch Desktop Solver GUI
 ```bash
+python3 solver_gui.py
+```
+
+### Run Automated Headless Verification
+```bash
+python3 solver_gui.py --test
 python3 flexure.py
 ```
 
-Expected output:
+Expected headless output:
 ```
+solver_gui headless check passed!
 Self-check passed (NSCP 2015):
   f'c=28.0 MPa -> E_c=24870.06 MPa, n=8.04, beta_1=0.85
   NA depth x=164.30 mm (Q_c=4049393 mm^3, Q_s=4049393 mm^3)
