@@ -1,4 +1,4 @@
-"""NSCP 2015 RC Flexure Solver GUI with Inelastic Diagrams & Moment-Curvature Plot.
+"""NSCP 2015 RC Flexure Solver GUI with 3-Region Inelastic Diagrams & Moment-Curvature Plot.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -53,7 +53,7 @@ def solve_flexure_section(
     inelastic = calculate_inelastic_capacity(b, d, as_area, fc_prime, fy)
     util_ult = m_ult_knm / inelastic["phi_M_n_knm"] if inelastic["phi_M_n_knm"] > 0 else 0.0
 
-    # Moment-Curvature Curve
+    # Moment-Curvature Curve with 3 explicit regions
     mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy)
 
     status = (
@@ -111,7 +111,7 @@ def generate_inelastic_diagram_png(
     ax1.legend(loc="lower right", fontsize=7, framealpha=0.8)
 
     # Panel 2: Inelastic Strain Profile
-    ax2.set_title("Strain Profile (ε)", fontsize=9, fontweight="bold")
+    ax2.set_title("Inelastic Strain (ε)", fontsize=9, fontweight="bold")
     ax2.axvline(0, color="gray", lw=0.8)
     ax2.axhline(-c, color="red", linestyle="--", lw=1.0)
     ax2.plot([-0.003, eps_s], [0, -d], "b-o", lw=1.8, ms=4)
@@ -162,7 +162,7 @@ def generate_inelastic_diagram_png(
 def generate_moment_curvature_plot_png(
     mc_data: dict, m_serv_knm: float, m_ult_knm: float
 ) -> bytes:
-    """Generate a matplotlib plot of the Moment-Curvature (M - phi) response curve."""
+    """Generate a matplotlib plot highlighting the 3 flexural behavior regions on the M - phi curve."""
     phi_pts = mc_data["phi_pts"]
     m_pts = mc_data["m_pts"]
     m_cr = mc_data["M_cr_knm"]
@@ -173,23 +173,39 @@ def generate_moment_curvature_plot_png(
     fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=100)
     fig.patch.set_facecolor("#FAFAFA")
 
-    # Plot M - phi response backbone
-    ax.plot(phi_pts, m_pts, "b-o", lw=2.0, ms=5, label="M - ϕ Response")
+    # Shaded Behavior Regions
+    # Region 1: O -> C (Elastic Uncracked)
+    ax.axvspan(0, phi_pts[1], color="#C8E6C9", alpha=0.4, label="O->C: Elastic & Uncracked")
+    # Region 2: C -> Y (Elastic Cracked)
+    ax.axvspan(phi_pts[1], phi_pts[2], color="#FFF9C4", alpha=0.5, label="C->Y: Elastic & Cracked")
+    # Region 3: Y -> U (Inelastic Cracked)
+    ax.axvspan(phi_pts[2], phi_pts[3], color="#FFCDD2", alpha=0.4, label="Y->U: Inelastic & Cracked")
 
-    # Mark key limit states
-    ax.scatter([phi_pts[1]], [m_cr], color="green", s=50, zorder=5, label=f"Cracking (M_cr={m_cr:.1f}kN·m)")
-    ax.scatter([phi_pts[2]], [m_y], color="orange", s=50, zorder=5, label=f"Yield (M_y={m_y:.1f}kN·m)")
-    ax.scatter([phi_pts[3]], [m_n], color="red", s=50, zorder=5, label=f"Nominal (M_n={m_n:.1f}kN·m)")
+    # Backbone plot
+    ax.plot(phi_pts, m_pts, "b-o", lw=2.2, ms=5)
+
+    # Key Point Markers
+    ax.scatter([phi_pts[0]], [0], color="black", s=30, zorder=5)
+    ax.text(phi_pts[0], 5, "O", fontsize=8, fontweight="bold", ha="center")
+
+    ax.scatter([phi_pts[1]], [m_cr], color="green", s=50, zorder=5)
+    ax.text(phi_pts[1], m_cr + 10, f"C (Mcr={m_cr:.1f})", fontsize=7, fontweight="bold", color="green", ha="center")
+
+    ax.scatter([phi_pts[2]], [m_y], color="darkorange", s=50, zorder=5)
+    ax.text(phi_pts[2], m_y + 10, f"Y (My={m_y:.1f})", fontsize=7, fontweight="bold", color="darkorange", ha="right")
+
+    ax.scatter([phi_pts[3]], [m_n], color="red", s=50, zorder=5)
+    ax.text(phi_pts[3], m_n + 10, f"U (Mn={m_n:.1f})", fontsize=7, fontweight="bold", color="red", ha="right")
 
     # Demand levels
     ax.axhline(m_serv_knm, color="gray", linestyle=":", lw=1.2, label=f"M_service={m_serv_knm:.1f}kN·m")
     ax.axhline(m_ult_knm, color="purple", linestyle="--", lw=1.2, label=f"M_factored={m_ult_knm:.1f}kN·m")
 
-    ax.set_title(f"Moment - Curvature Response (Curvature Ductility µ_ϕ = {mu_phi:.2f})", fontsize=9, fontweight="bold")
+    ax.set_title(f"3-Region Moment - Curvature (µ_ϕ = {mu_phi:.2f})", fontsize=9, fontweight="bold")
     ax.set_xlabel("Curvature ϕ (rad/m)", fontsize=8)
     ax.set_ylabel("Flexural Moment M (kN·m)", fontsize=8)
     ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend(fontsize=7, loc="lower right", framealpha=0.9)
+    ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
 
     plt.tight_layout()
 
@@ -205,7 +221,7 @@ def create_window() -> sg.Window:
 
     layout = [
         [sg.Text("NSCP 2015 Reinforced Concrete Flexure Solver", font=("Helvetica", 12, "bold"))],
-        [sg.Text("Elastic (WSD), Inelastic (USD), and Moment-Curvature Analysis", font=("Helvetica", 9, "italic"))],
+        [sg.Text("Elastic & Inelastic Flexure across 3 Behavior Regions (O->C, C->Y, Y->U)", font=("Helvetica", 9, "italic"))],
         [sg.HorizontalSeparator()],
         # Input Section
         [
@@ -251,12 +267,12 @@ def create_window() -> sg.Window:
                 [
                     [
                         sg.Tab(
-                            "Inelastic Stress Diagram",
-                            [[sg.Image(key="-IMAGE-STRESS-", size=(460, 270))]],
+                            "Moment - Curvature (3 Regions)",
+                            [[sg.Image(key="-IMAGE-MPH-", size=(460, 270))]],
                         ),
                         sg.Tab(
-                            "Moment - Curvature (M - ϕ)",
-                            [[sg.Image(key="-IMAGE-MPH-", size=(460, 270))]],
+                            "Inelastic Stress Diagram",
+                            [[sg.Image(key="-IMAGE-STRESS-", size=(460, 270))]],
                         ),
                     ]
                 ]
@@ -290,27 +306,34 @@ def run_gui() -> None:
                 inel = res["inelastic"]
                 mc = res["mc_data"]
 
+                # Determine current region for service & factored loads
+                def get_region(m_val):
+                    if m_val <= mc["M_cr_knm"]:
+                        return "Region O->C (Elastic Uncracked)"
+                    elif m_val <= mc["M_y_knm"]:
+                        return "Region C->Y (Elastic Cracked)"
+                    else:
+                        return "Region Y->U (Inelastic Cracked)"
+
                 out_text = (
+                    f"--- BEHAVIOR REGIONS BREAKDOWN ---\n"
+                    f"O->C Elastic Uncracked: 0 <= M <= {mc['M_cr_knm']:.2f} kN·m\n"
+                    f"C->Y Elastic Cracked  : {mc['M_cr_knm']:.2f} < M <= {mc['M_y_knm']:.2f} kN·m\n"
+                    f"Y->U Inelastic Cracked: {mc['M_y_knm']:.2f} < M <= {mc['M_n_knm']:.2f} kN·m\n\n"
+                    f"Service M State       : {get_region(m_serv)}\n"
+                    f"Factored Mu State      : {get_region(m_ult)}\n\n"
                     f"--- ELASTIC (WSD) PARAMETERS ---\n"
                     f"Concrete Modulus (E_c) : {res['E_c']:.2f} MPa\n"
                     f"Modular Ratio (n)     : {res['n']:.2f}\n"
                     f"Elastic NA Depth (x)  : {res['x']:.2f} mm\n"
-                    f"Cracked Inertia (I_cr): {res['I_cr']:.3e} mm⁴\n"
                     f"Service f_c / Allow   : {res['f_c']:.2f} / {res['f_c_allow']:.2f} MPa ({res['util_c']*100:.1f}%)\n"
                     f"Service f_s / Allow   : {res['f_s']:.2f} / {res['f_s_allow']:.2f} MPa ({res['util_s']*100:.1f}%)\n\n"
                     f"--- INELASTIC (USD) CAPACITY ---\n"
                     f"Inelastic NA Depth (c): {inel['c']:.2f} mm\n"
                     f"Stress Block Depth (a): {inel['a']:.2f} mm\n"
                     f"Steel Strain (eps_s)  : {inel['eps_s']:.5f}\n"
-                    f"Phi Factor (phi)      : {inel['phi']:.2f}\n"
-                    f"Nominal Cap. (M_n)    : {inel['M_n_knm']:.2f} kN·m\n"
-                    f"Design Cap. (phi*M_n) : {inel['phi_M_n_knm']:.2f} kN·m\n"
-                    f"Factored Demand (M_u) : {m_ult:.2f} kN·m ({res['util_ult']*100:.1f}%)\n\n"
-                    f"--- MOMENT-CURVATURE RESPONSE ---\n"
-                    f"Cracking Moment (M_cr): {mc['M_cr_knm']:.2f} kN·m\n"
-                    f"Yield Moment (M_y)    : {mc['M_y_knm']:.2f} kN·m\n"
+                    f"Design Cap. (phi*M_n) : {inel['phi_M_n_knm']:.2f} kN·m ({res['util_ult']*100:.1f}%)\n"
                     f"Curvature Ductility µ_ϕ: {mc['ductility_ratio']:.2f}\n"
-                    f"Failure Mode          : {inel['failure_mode']}\n"
                     f"---------------------------------\n"
                     f"OVERALL DESIGN STATUS : {res['status']}"
                 )

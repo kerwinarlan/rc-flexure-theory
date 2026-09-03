@@ -156,52 +156,65 @@ def calculate_inelastic_capacity(
 
 def calculate_moment_curvature(
     b: float, d: float, h: float, a_s: float, fc_prime: float, fy: float
-) -> dict[str, float | list[float]]:
-    """Calculate key points on the Moment-Curvature (M - phi) response curve.
+) -> dict[str, float | list[float] | dict[str, str]]:
+    """Calculate key points and 3 explicit regions on the Moment-Curvature (M - phi) response curve.
     
-    Returns M_cr, phi_cr, M_y, phi_y, M_n, phi_u, ductility_ratio, and (phi_points, M_points).
+    Region O -> C: Stresses elastic, Section uncracked (EI_g)
+    Region C -> Y: Stresses elastic, Section cracked (EI_cr)
+    Region Y -> U: Stresses inelastic, Section cracked
+    
     [CALCULATED: NSCP 2015 / ACI 318 Flexural Mechanics]
     """
     e_c = calculate_concrete_modulus(fc_prime)
     n = calculate_modular_ratio(fc_prime)
     f_r = calculate_modulus_of_rupture(fc_prime)
 
-    # 1. Cracking Stage
-    i_g = (1.0 / 12.0) * b * (h**3)  # Gross moment of inertia
+    # Region O -> C: Uncracked Elastic Stage
+    i_g = (1.0 / 12.0) * b * (h**3)
     y_t = h / 2.0
     m_cr_nmm = (f_r * i_g) / y_t
     m_cr_knm = m_cr_nmm / 1e6
     phi_cr = m_cr_nmm / (e_c * i_g)  # 1/mm
+    ei_g = (e_c * i_g) / 1e9  # kN*m^2
 
-    # 2. Yield Stage
+    # Region C -> Y: Cracked Elastic Stage
     x = calculate_neutral_axis_depth(b, d, a_s, n)
     i_cr = calculate_cracked_moment_of_inertia(b, d, a_s, n, x)
     eps_y = fy / E_S_GIVEN
     phi_y = eps_y / (d - x)  # 1/mm
     m_y_nmm = (fy * i_cr) / (n * (d - x))
     m_y_knm = m_y_nmm / 1e6
+    ei_cr = (e_c * i_cr) / 1e9  # kN*m^2
 
-    # 3. Ultimate Inelastic Stage
+    # Region Y -> U: Cracked Inelastic Stage
     c, a, f_s, eps_s = calculate_inelastic_neutral_axis(b, d, a_s, fc_prime, fy)
     m_n_knm = (a_s * f_s * (d - a / 2.0)) / 1e6
     phi_u = EPS_U_GIVEN / c  # 1/mm
 
     ductility_ratio = phi_u / phi_y if phi_y > 0 else 0.0
 
-    # Points for plotting (Curvature in rad/m = 1000 * 1/mm, Moment in kN*m)
     phi_pts = [0.0, phi_cr * 1000.0, phi_y * 1000.0, phi_u * 1000.0]
     m_pts = [0.0, m_cr_knm, m_y_knm, m_n_knm]
+
+    regions = {
+        "O_C": "Region O->C: Stresses Elastic, Section Uncracked (0 to M_cr)",
+        "C_Y": "Region C->Y: Stresses Elastic, Section Cracked (M_cr to M_y)",
+        "Y_U": "Region Y->U: Stresses Inelastic, Section Cracked (M_y to M_n)",
+    }
 
     return {
         "M_cr_knm": m_cr_knm,
         "phi_cr_rad_m": phi_cr * 1000.0,
+        "EI_g_knm2": ei_g,
         "M_y_knm": m_y_knm,
         "phi_y_rad_m": phi_y * 1000.0,
+        "EI_cr_knm2": ei_cr,
         "M_n_knm": m_n_knm,
         "phi_u_rad_m": phi_u * 1000.0,
         "ductility_ratio": ductility_ratio,
         "phi_pts": phi_pts,
         "m_pts": m_pts,
+        "regions": regions,
     }
 
 
@@ -216,7 +229,6 @@ def self_check() -> None:
     expected_n = 200000.0 / expected_ec
     assert math.isclose(n, expected_n, rel_tol=1e-6)
 
-    # Test moment-curvature calculation
     b, d, h, a_s, fy = 300.0, 500.0, 565.0, 1500.0, 420.0  # mm, MPa [ASSUMED]
     mc = calculate_moment_curvature(b, d, h, a_s, fc, fy)
     assert mc["M_cr_knm"] > 0
@@ -226,9 +238,10 @@ def self_check() -> None:
 
     print(
         f"Self-check passed (NSCP 2015):\n"
-        f"  M-phi Curve: M_cr={mc['M_cr_knm']:.2f} kN*m, M_y={mc['M_y_knm']:.2f} kN*m, M_n={mc['M_n_knm']:.2f} kN*m\n"
-        f"  Curvatures: phi_cr={mc['phi_cr_rad_m']:.3f} rad/m, phi_y={mc['phi_y_rad_m']:.3f} rad/m, phi_u={mc['phi_u_rad_m']:.3f} rad/m\n"
-        f"  Curvature Ductility Ratio (mu_phi): {mc['ductility_ratio']:.2f}"
+        f"  Region O->C (Elastic Uncracked): M_cr={mc['M_cr_knm']:.2f} kN*m, phi_cr={mc['phi_cr_rad_m']:.3f} rad/m\n"
+        f"  Region C->Y (Elastic Cracked)  : M_y={mc['M_y_knm']:.2f} kN*m, phi_y={mc['phi_y_rad_m']:.3f} rad/m\n"
+        f"  Region Y->U (Inelastic Cracked): M_n={mc['M_n_knm']:.2f} kN*m, phi_u={mc['phi_u_rad_m']:.3f} rad/m\n"
+        f"  Ductility Ratio (mu_phi): {mc['ductility_ratio']:.2f}"
     )
 
 
