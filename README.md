@@ -7,10 +7,20 @@ Calculates fundamental elastic (WSD), inelastic (USD), balanced reinforcement ($
 This repository provides core equations for concrete elastic modulus, modular ratio, neutral axis depth, working stresses, ultimate strength capacity ($\phi M_n$), and 3-region moment-curvature response.
 It solves classic university flexure problems including **CE 152 Example 3** ($b=250\text{ mm}, d=575\text{ mm}, f'_c=28\text{ MPa}, f_y=420\text{ MPa}, A_s=1470\text{ mm}^2 \rightarrow a=103.76\text{ mm}$) and **CE 152 Slide 35 Balanced Condition** ($c_{bal}=338.24\text{ mm}, \rho_b=2.83\%$).
 It supports both **US Customary units** ($\text{kip-in}, 1/\text{in}, \text{ksi}, \text{in}$) and **SI Metric units** ($\text{kN}\cdot\text{m}, \text{rad/m}, \text{MPa}, \text{mm}$).
-The application includes a desktop solver GUI with **Parametric $M - \phi$ vs $A_s$ Study Graphs**, **Step-by-Step Board Solution Cards** (aligned $=$ signs), **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$), and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
+The application includes a desktop solver GUI with **Interactive Parametric $M - \phi$ Variable Dropdowns** ($A_s, d, f'_c, b, f_y$), **Step-by-Step Board Solution Cards** (aligned $=$ signs), **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$), and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
 It also includes an **NSCP 2015 OCR Indexer System** (`nscp_indexer.py`) for cover-to-cover PDF study and knowledge extraction.
 
 All calculations follow the National Structural Code of the Philippines (NSCP 2015, 7th Edition) and ACI 318.
+
+## Parametric $M - \phi$ Variable Comparison ($A_s, d, f'_c, b, f_y$)
+
+The GUI dropdown allows plotting moment-curvature curves across 5 design variables:
+
+1. **Steel Area ($A_s$)**: Increasing $A_s$ increases $M_n$ (taller curve) but reduces ultimate curvature $\phi_u$ (less ductile).
+2. **Effective Depth ($d$)**: Increasing $d$ increases internal moment arm $(d - a/2)$ and flexural capacity $M_n$.
+3. **Concrete Strength ($f'_c$)**: Increasing $f'_c$ reduces stress block depth $a$, increasing concrete strain margin.
+4. **Beam Width ($b$)**: Increasing $b$ increases compression area, reducing stress block depth $a$.
+5. **Steel Yield Strength ($f_y$)**: Increasing $f_y$ increases yield strain $\epsilon_y = f_y / E_s$ and yield moment $M_y$.
 
 ## Three Flexural Behavior Regions
 
@@ -64,7 +74,7 @@ $$\phi_u = \frac{\epsilon_u}{c} = \frac{0.003}{c}, \quad \mu_\phi = \frac{\phi_u
 ```
 rc-flexure-theory/
 ├── flexure.py                 # Core NSCP 2015 / ACI 318 flexure & balanced module (US/SI)
-├── solver_gui.py              # FreeSimpleGUI solver GUI with Parametric As M-phi plots
+├── solver_gui.py              # FreeSimpleGUI solver GUI with Parametric Variable M-phi plots
 ├── nscp_indexer.py            # NSCP 2015 PDF OCR study & search tool
 ├── NSCP_AGENT_PROTOCOL.md     # Agent study protocol & review guidelines
 ├── PARAMETER_LEDGER.md        # Parameter provenance tracking table
@@ -98,7 +108,7 @@ Self-check passed:
   CE 152 Slide 35   : c_bal = 338.24 mm, rho_b = 2.83%
   US Customary      : M_cr=480.3 kip-in, M_n=2596.2 kip-in
   Ductility Ratio   : 4.76
-solver_gui CE 152 Slide 35 & Parametric As check passed!
+solver_gui 5 Parametric Variables & Dropdown Plot View check passed!
 ```
 
 ## Parameter Provenance

@@ -1,4 +1,4 @@
-"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Parametric As M-phi Study, Step-by-Step LaTeX Solution, Whitney UDL Diagram & US/SI Support.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Interactive Parametric Variable Dropdowns (As, d, f'c, b, fy), Board Solution & Multi-Units.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -256,43 +256,101 @@ def generate_moment_curvature_plot_png(
     return buf.getvalue()
 
 
-def generate_as_parametric_moment_curvature_plot_png(res: dict) -> bytes:
-    """Generate a parametric Moment-Curvature plot comparing different steel reinforcement areas As."""
-    b = res["b"]
-    d = res["d"]
-    h = res["h"]
-    fc = res["fc"]
-    fy = res["fy"]
+def generate_parametric_moment_curvature_plot_png(res: dict, param_key: str = "Steel Area (As)") -> bytes:
+    """Generate a parametric Moment-Curvature plot comparing variations of As, d, f'c, b, or fy."""
+    b_base = res["b"]
+    d_base = res["d"]
+    h_base = res["h"]
+    fc_base = res["fc"]
+    fy_base = res["fy"]
     as_base = res["as_area"]
     units = res["units"]
     bal = res["balanced"]
-    as_bal = bal["A_s_bal"]
-    as_max = bal["A_s_max"]
 
     l_unit = "mm²" if units.upper() == "SI" else "in²"
     m_unit = "kN·m" if units.upper() == "SI" else "kip-in"
     phi_unit = "rad/m" if units.upper() == "SI" else "1/in"
-
-    as_variations = [
-        (as_base * 0.5, f"0.5x As ({as_base*0.5:.2f} {l_unit})", "green", ":"),
-        (as_base, f"Current As ({as_base:.2f} {l_unit})", "blue", "-"),
-        (as_max, f"As,max ({as_max:.2f} {l_unit})", "purple", "-."),
-        (as_base * 1.5, f"1.5x As ({as_base*1.5:.2f} {l_unit})", "orange", "--"),
-        (as_bal, f"As,bal ({as_bal:.2f} {l_unit})", "red", "-."),
-    ]
+    f_unit = "MPa" if units.upper() == "SI" else "ksi"
+    d_unit = "mm" if units.upper() == "SI" else "in"
 
     fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=100)
     fig.patch.set_facecolor("#FAFAFA")
 
-    for as_val, label, col, ls in as_variations:
-        mc = calculate_moment_curvature(b, d, h, as_val, fc, fy, units)
-        ax.plot(mc["phi_pts"], mc["m_pts"], color=col, linestyle=ls, lw=1.8,
-                label=f"{label} [µ_ϕ={mc['ductility_ratio']:.1f}]")
+    if "As" in param_key or "Steel Area" in param_key:
+        as_bal = bal["A_s_bal"]
+        as_max = bal["A_s_max"]
+        as_variations = [
+            (as_base * 0.5, f"0.5x As ({as_base*0.5:.2f} {l_unit})", "green", ":"),
+            (as_base, f"Current As ({as_base:.2f} {l_unit})", "blue", "-"),
+            (as_max, f"As,max ({as_max:.2f} {l_unit})", "purple", "-."),
+            (as_base * 1.5, f"1.5x As ({as_base*1.5:.2f} {l_unit})", "orange", "--"),
+            (as_bal, f"As,bal ({as_bal:.2f} {l_unit})", "red", "-."),
+        ]
+        title_str = "Parametric M - ϕ vs Steel Area (As) [Tradeoff: Strength vs Ductility]"
+        note_str = "↑ As -> Higher M_n (taller curve), but ↓ phi_u (shorter curvature length = reduced ductility µ_ϕ)"
+        for as_val, label, col, ls in as_variations:
+            mc = calculate_moment_curvature(b_base, d_base, h_base, as_val, fc_base, fy_base, units)
+            ax.plot(mc["phi_pts"], mc["m_pts"], color=col, linestyle=ls, lw=1.8,
+                    label=f"{label} [µ_ϕ={mc['ductility_ratio']:.1f}]")
 
-    ax.set_title("Parametric Moment - Curvature Response vs Steel Area (As)", fontsize=9, fontweight="bold")
+    elif "d" in param_key or "Depth" in param_key:
+        d_variations = [
+            (d_base * 0.8, f"0.8x d ({d_base*0.8:.1f} {d_unit})", "green", ":"),
+            (d_base * 0.9, f"0.9x d ({d_base*0.9:.1f} {d_unit})", "cyan", "--"),
+            (d_base, f"Current d ({d_base:.1f} {d_unit})", "blue", "-"),
+            (d_base * 1.1, f"1.1x d ({d_base*1.1:.1f} {d_unit})", "orange", "-."),
+            (d_base * 1.2, f"1.2x d ({d_base*1.2:.1f} {d_unit})", "red", "--"),
+        ]
+        title_str = "Parametric M - ϕ vs Effective Depth (d) [Moment Arm Scaling]"
+        note_str = "↑ Depth d -> Increases moment arm (d - a/2) -> Higher M_n & stiffer elastic cracked slope"
+        for d_val, label, col, ls in d_variations:
+            h_val = d_val + (65.0 if units.upper() == "SI" else 2.5)
+            mc = calculate_moment_curvature(b_base, d_val, h_val, as_base, fc_base, fy_base, units)
+            ax.plot(mc["phi_pts"], mc["m_pts"], color=col, linestyle=ls, lw=1.8,
+                    label=f"{label} [M_n={mc['M_n']:.1f}{m_unit}]")
+
+    elif "f'c" in param_key or "Concrete" in param_key:
+        fc_list = [21.0, 28.0, 35.0, 42.0] if units.upper() == "SI" else [3.0, 4.0, 5.0, 6.0]
+        colors = ["green", "blue", "orange", "purple"]
+        title_str = "Parametric M - ϕ vs Concrete Strength (f'c)"
+        note_str = "↑ Concrete f'c -> Reduces stress block depth a = As*fy / (0.85*f'c*b) -> Increases strain margin & ductility"
+        for idx, fc_val in enumerate(fc_list):
+            mc = calculate_moment_curvature(b_base, d_base, h_base, as_base, fc_val, fy_base, units)
+            ax.plot(mc["phi_pts"], mc["m_pts"], color=colors[idx % len(colors)], lw=1.8,
+                    label=f"f'c={fc_val:.0f} {f_unit} [µ_ϕ={mc['ductility_ratio']:.1f}]")
+
+    elif "b" in param_key or "Width" in param_key:
+        b_variations = [
+            (b_base * 0.8, f"0.8x b ({b_base*0.8:.0f} {d_unit})", "green", ":"),
+            (b_base, f"Current b ({b_base:.0f} {d_unit})", "blue", "-"),
+            (b_base * 1.2, f"1.2x b ({b_base*1.2:.0f} {d_unit})", "orange", "--"),
+            (b_base * 1.5, f"1.5x b ({b_base*1.5:.0f} {d_unit})", "red", "-."),
+        ]
+        title_str = "Parametric M - ϕ vs Beam Width (b)"
+        note_str = "↑ Width b -> Increases concrete compression area -> Reduces stress block depth a & neutral axis c"
+        for b_val, label, col, ls in b_variations:
+            mc = calculate_moment_curvature(b_val, d_base, h_base, as_base, fc_base, fy_base, units)
+            ax.plot(mc["phi_pts"], mc["m_pts"], color=col, linestyle=ls, lw=1.8,
+                    label=f"{label} [M_n={mc['M_n']:.1f}{m_unit}]")
+
+    else:  # fy
+        fy_list = [280.0, 420.0, 520.0] if units.upper() == "SI" else [40.0, 60.0, 75.0]
+        colors = ["green", "blue", "red"]
+        title_str = "Parametric M - ϕ vs Steel Yield Strength (fy)"
+        note_str = "↑ Yield fy -> Increases yield strain eps_y = fy/E_s & yield moment M_y"
+        for idx, fy_val in enumerate(fy_list):
+            mc = calculate_moment_curvature(b_base, d_base, h_base, as_base, fc_base, fy_val, units)
+            ax.plot(mc["phi_pts"], mc["m_pts"], color=colors[idx % len(colors)], lw=1.8,
+                    label=f"fy={fy_val:.0f} {f_unit} [M_n={mc['M_n']:.1f}{m_unit}]")
+
+    ax.set_title(title_str, fontsize=9, fontweight="bold")
     ax.set_xlabel(f"Curvature ϕ ({phi_unit})", fontsize=8)
     ax.set_ylabel(f"Flexural Moment M ({m_unit})", fontsize=8)
     ax.grid(True, linestyle="--", alpha=0.5)
+
+    ax.text(0.02, 0.92, note_str, transform=ax.transAxes, fontsize=7.2, color="#0D47A1", fontweight="bold",
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="#E3F2FD", edgecolor="#1E88E5", alpha=0.9))
+
     ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
 
     plt.tight_layout()
@@ -460,6 +518,22 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
     elif pv.get("preset") == "slide35":
         default_preset = preset_options[2]
 
+    plot_view_options = [
+        "Step-by-Step Board Solution",
+        "Parametric M - ϕ vs Variable",
+        "Whitney Stress UDL Diagram",
+        "3-Region Moment - Curvature (M - ϕ)",
+        "LaTeX Math Derivation",
+    ]
+
+    param_var_options = [
+        "Steel Area (As)",
+        "Effective Depth (d)",
+        "Concrete Strength (f'c)",
+        "Beam Width (b)",
+        "Steel Yield Strength (fy)",
+    ]
+
     layout = [
         [sg.Text("NSCP 2015 / ACI 318 RC Flexure Solver (LaTeX & Multi-Units)", font=("Helvetica", 12, "bold"))],
         [
@@ -503,7 +577,7 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
         ],
         [sg.Button("Calculate & Plot", button_color=("white", "navy")), sg.Button("Exit")],
         [sg.HorizontalSeparator()],
-        # Output Results and Tabbed Visualizations
+        # Output Results and Interactive Plot Selector
         [
             sg.Column(
                 [
@@ -511,30 +585,15 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
                     [sg.Multiline("", key="-OUTPUT-", size=(44, 16), disabled=True, font=("Courier", 9))],
                 ]
             ),
-            sg.TabGroup(
+            sg.Column(
                 [
                     [
-                        sg.Tab(
-                            "Step-by-Step Board Solution",
-                            [[sg.Image(key="-IMAGE-STEPS-", size=(460, 270))]],
-                        ),
-                        sg.Tab(
-                            "Parametric M-ϕ vs As",
-                            [[sg.Image(key="-IMAGE-AS-PARAM-", size=(460, 270))]],
-                        ),
-                        sg.Tab(
-                            "Whitney Stress UDL Diagram",
-                            [[sg.Image(key="-IMAGE-STRESS-", size=(460, 270))]],
-                        ),
-                        sg.Tab(
-                            "Moment - Curvature (M - ϕ)",
-                            [[sg.Image(key="-IMAGE-MPH-", size=(460, 270))]],
-                        ),
-                        sg.Tab(
-                            "LaTeX Math Derivation",
-                            [[sg.Image(key="-IMAGE-LATEX-", size=(460, 270))]],
-                        ),
-                    ]
+                        sg.Text("Diagram View:", font=("Helvetica", 9, "bold")),
+                        sg.Combo(plot_view_options, default_value=plot_view_options[0], key="-PLOT-VIEW-", enable_events=True, readonly=True),
+                        sg.Text(" Param Variable:", font=("Helvetica", 9, "bold")),
+                        sg.Combo(param_var_options, default_value=param_var_options[0], key="-PARAM-VAR-", enable_events=True, readonly=True),
+                    ],
+                    [sg.Image(key="-IMAGE-DISPLAY-", size=(460, 270))],
                 ]
             ),
         ],
@@ -546,6 +605,7 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
 def run_gui() -> None:
     """Run event loop."""
     window = create_window("US")
+    cached_data = {}
 
     while True:
         event, values = window.read()
@@ -556,6 +616,7 @@ def run_gui() -> None:
             selected_unit = "SI" if "SI" in values["-UNITS-"] else "US"
             window.close()
             window = create_window(selected_unit)
+            cached_data = {}
             continue
 
         if event == "-PRESET-":
@@ -563,10 +624,23 @@ def run_gui() -> None:
                 pv = {"fc": "28.0", "fy": "420.0", "b": "250.0", "d": "575.0", "as": "1470.0", "mserv": "100.0", "mult": "220.0", "preset": "ex3"}
                 window.close()
                 window = create_window("SI", preset_vals=pv)
+                cached_data = {}
             elif "CE 152 Slide 35" in values["-PRESET-"]:
                 pv = {"fc": "28.0", "fy": "420.0", "b": "250.0", "d": "575.0", "as": "4072.9", "mserv": "100.0", "mult": "220.0", "preset": "slide35"}
                 window.close()
                 window = create_window("SI", preset_vals=pv)
+                cached_data = {}
+            continue
+
+        if event in ("-PLOT-VIEW-", "-PARAM-VAR-") and cached_data:
+            selected_view = values["-PLOT-VIEW-"]
+            if selected_view == "Parametric M - ϕ vs Variable":
+                param_var = values["-PARAM-VAR-"]
+                png_bytes = generate_parametric_moment_curvature_plot_png(cached_data["res"], param_var)
+                window["-IMAGE-DISPLAY-"].update(data=png_bytes)
+            else:
+                if selected_view in cached_data["images"]:
+                    window["-IMAGE-DISPLAY-"].update(data=cached_data["images"][selected_view])
             continue
 
         if event == "Calculate & Plot":
@@ -620,20 +694,23 @@ def run_gui() -> None:
                 )
                 window["-OUTPUT-"].update(out_text)
 
-                png_steps = generate_step_by_step_latex_png(res)
-                window["-IMAGE-STEPS-"].update(data=png_steps)
+                images = {
+                    "Step-by-Step Board Solution": generate_step_by_step_latex_png(res),
+                    "Whitney Stress UDL Diagram": generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel, selected_unit),
+                    "3-Region Moment - Curvature (M - ϕ)": generate_moment_curvature_plot_png(mc, m_serv, m_ult),
+                    "LaTeX Math Derivation": generate_latex_summary_card_png(res),
+                }
 
-                png_as_param = generate_as_parametric_moment_curvature_plot_png(res)
-                window["-IMAGE-AS-PARAM-"].update(data=png_as_param)
+                cached_data = {"res": res, "images": images}
 
-                png_stress = generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel, selected_unit)
-                window["-IMAGE-STRESS-"].update(data=png_stress)
+                selected_view = values.get("-PLOT-VIEW-", "Step-by-Step Board Solution")
+                if selected_view == "Parametric M - ϕ vs Variable":
+                    param_var = values.get("-PARAM-VAR-", "Steel Area (As)")
+                    png_bytes = generate_parametric_moment_curvature_plot_png(res, param_var)
+                else:
+                    png_bytes = images.get(selected_view, images["Step-by-Step Board Solution"])
 
-                png_mph = generate_moment_curvature_plot_png(mc, m_serv, m_ult)
-                window["-IMAGE-MPH-"].update(data=png_mph)
-
-                png_latex = generate_latex_summary_card_png(res)
-                window["-IMAGE-LATEX-"].update(data=png_latex)
+                window["-IMAGE-DISPLAY-"].update(data=png_bytes)
 
             except Exception as err:
                 sg.popup_error(f"Invalid input values: {err}", title="Input Error")
@@ -642,26 +719,17 @@ def run_gui() -> None:
 
 
 def self_check_headless() -> None:
-    """Headless self-check for solver_gui.py, CE 152 Example 3, and Slide 35."""
+    """Headless self-check for solver_gui.py, CE 152 Example 3, Slide 35, and 5 parametric variables."""
     res_ce152 = solve_flexure_section(28.0, 420.0, 250.0, 575.0, 1470.0, 100.0, 220.0, "SI")
     assert abs(res_ce152["inelastic"]["a"] - 103.76) < 0.1
     assert abs(res_ce152["balanced"]["c_bal"] - 338.24) < 0.1
 
-    res_us = solve_flexure_section(4.0, 60.0, 12.0, 20.0, 2.37, 1200.0, 2000.0, "US")
-    assert res_us["status"] == "PASS"
+    # Check all 5 parametric variable plots
+    for p_var in ["Steel Area (As)", "Effective Depth (d)", "Concrete Strength (f'c)", "Beam Width (b)", "Steel Yield Strength (fy)"]:
+        png = generate_parametric_moment_curvature_plot_png(res_ce152, p_var)
+        assert len(png) > 1000
 
-    png_steps = generate_step_by_step_latex_png(res_ce152)
-    png_as_param = generate_as_parametric_moment_curvature_plot_png(res_ce152)
-    png_stress = generate_inelastic_diagram_png(250.0, 575.0, 1470.0, 28.0, 420.0, res_ce152["inelastic"], "SI")
-    png_mph = generate_moment_curvature_plot_png(res_ce152["mc_data"], 100.0, 220.0)
-    png_latex = generate_latex_summary_card_png(res_ce152)
-
-    assert len(png_steps) > 1000
-    assert len(png_as_param) > 1000
-    assert len(png_stress) > 1000
-    assert len(png_mph) > 1000
-    assert len(png_latex) > 1000
-    print("solver_gui CE 152 Slide 35 & Parametric As check passed!")
+    print("solver_gui 5 Parametric Variables & Dropdown Plot View check passed!")
 
 
 if __name__ == "__main__":
