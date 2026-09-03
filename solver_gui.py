@@ -67,7 +67,7 @@ def create_window() -> sg.Window:
     layout = [
         [sg.Text("NSCP 2015 Reinforced Concrete Flexure Solver", font=("Helvetica", 12, "bold"))],
         [sg.Text("Working Stress Design (WSD) / Elastic Transformed Section", font=("Helvetica", 9, "italic"))],
-        [sg.Separator()],
+        [sg.HorizontalSeparator()],
         # Inputs
         [
             sg.Text("Concrete strength", size=(18, 1)),
@@ -106,7 +106,7 @@ def create_window() -> sg.Window:
             sg.Text("kN·m", size=(5, 1)),
         ],
         [sg.Button("Calculate", button_color=("white", "navy")), sg.Button("Exit")],
-        [sg.Separator()],
+        [sg.HorizontalSeparator()],
         # Results
         [sg.Text("Output Results (NSCP 2015)", font=("Helvetica", 10, "bold"))],
         [sg.Multiline("", key="-OUTPUT-", size=(52, 12), disabled=True, font=("Courier", 9))],
