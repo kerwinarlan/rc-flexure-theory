@@ -1,4 +1,4 @@
-"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Board-Exam Aligned Step-by-Step LaTeX Solution, Whitney UDL Diagram & US/SI Support.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Parametric As M-phi Study, Step-by-Step LaTeX Solution, Whitney UDL Diagram & US/SI Support.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from flexure import (
+    calculate_balanced_condition,
     calculate_beta_1,
     calculate_concrete_modulus,
     calculate_cracked_moment_of_inertia,
@@ -34,7 +35,7 @@ def solve_flexure_section(
     units: str = "US",
     lambda_factor: float = 1.0,
 ) -> dict[str, float | str | dict]:
-    """Calculate elastic (WSD), inelastic (USD), and moment-curvature parameters per ACI 318 / NSCP 2015."""
+    """Calculate elastic (WSD), inelastic (USD), balanced, and moment-curvature parameters per ACI 318 / NSCP 2015."""
     if fc_prime <= 0 or fy <= 0 or b <= 0 or d <= 0 or as_area <= 0 or m_serv < 0 or m_ult < 0:
         raise ValueError("Input parameters must be positive numbers.")
 
@@ -64,6 +65,9 @@ def solve_flexure_section(
     inelastic = calculate_inelastic_capacity(b, d, as_area, fc_prime, fy, units, lambda_factor)
     util_ult = m_ult / inelastic["phi_M_n"] if inelastic["phi_M_n"] > 0 else 0.0
 
+    # Balanced condition calculations
+    bal = calculate_balanced_condition(b, d, fc_prime, fy, units, lambda_factor)
+
     # Moment-Curvature Curve with 3 explicit regions
     mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy, units, lambda_factor)
 
@@ -78,6 +82,7 @@ def solve_flexure_section(
         "fy": fy,
         "b": b,
         "d": d,
+        "h": h,
         "as_area": as_area,
         "m_serv": m_serv,
         "m_ult": m_ult,
@@ -97,6 +102,7 @@ def solve_flexure_section(
         "util_s": util_s,
         "inelastic": inelastic,
         "util_ult": util_ult,
+        "balanced": bal,
         "mc_data": mc_data,
         "status": status,
     }
@@ -166,7 +172,7 @@ def generate_inelastic_diagram_png(
 
     # Resultant Tension Force T pointing RIGHT (->)
     ax3.annotate("", xy=(s_x * 0.8, -d), xytext=(0, -d),
-                 arrowprops=dict(arrowstyle="->", color="red", lw=2.0))
+                 arrowprops=dict(arrowstyle="->", color="red", lw=2.2))
     ax3.text(s_x * 0.85, -d, "T = As·fs", color="red", fontweight="bold", fontsize=7, ha="left", va="center")
     ax3.set_xlim(-s_x * 1.5, s_x * 1.5)
 
@@ -237,6 +243,53 @@ def generate_moment_curvature_plot_png(
     ax.axhline(m_ult, color="purple", linestyle="--", lw=1.2, label=f"M_factored={m_ult:.1f}{m_unit}")
 
     ax.set_title(f"3-Region Moment - Curvature (Curvature Ductility µ_ϕ = {mu_phi:.2f})", fontsize=9, fontweight="bold")
+    ax.set_xlabel(f"Curvature ϕ ({phi_unit})", fontsize=8)
+    ax.set_ylabel(f"Flexural Moment M ({m_unit})", fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def generate_as_parametric_moment_curvature_plot_png(res: dict) -> bytes:
+    """Generate a parametric Moment-Curvature plot comparing different steel reinforcement areas As."""
+    b = res["b"]
+    d = res["d"]
+    h = res["h"]
+    fc = res["fc"]
+    fy = res["fy"]
+    as_base = res["as_area"]
+    units = res["units"]
+    bal = res["balanced"]
+    as_bal = bal["A_s_bal"]
+    as_max = bal["A_s_max"]
+
+    l_unit = "mm²" if units.upper() == "SI" else "in²"
+    m_unit = "kN·m" if units.upper() == "SI" else "kip-in"
+    phi_unit = "rad/m" if units.upper() == "SI" else "1/in"
+
+    as_variations = [
+        (as_base * 0.5, f"0.5x As ({as_base*0.5:.2f} {l_unit})", "green", ":"),
+        (as_base, f"Current As ({as_base:.2f} {l_unit})", "blue", "-"),
+        (as_max, f"As,max ({as_max:.2f} {l_unit})", "purple", "-."),
+        (as_base * 1.5, f"1.5x As ({as_base*1.5:.2f} {l_unit})", "orange", "--"),
+        (as_bal, f"As,bal ({as_bal:.2f} {l_unit})", "red", "-."),
+    ]
+
+    fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=100)
+    fig.patch.set_facecolor("#FAFAFA")
+
+    for as_val, label, col, ls in as_variations:
+        mc = calculate_moment_curvature(b, d, h, as_val, fc, fy, units)
+        ax.plot(mc["phi_pts"], mc["m_pts"], color=col, linestyle=ls, lw=1.8,
+                label=f"{label} [µ_ϕ={mc['ductility_ratio']:.1f}]")
+
+    ax.set_title("Parametric Moment - Curvature Response vs Steel Area (As)", fontsize=9, fontweight="bold")
     ax.set_xlabel(f"Curvature ϕ ({phi_unit})", fontsize=8)
     ax.set_ylabel(f"Flexural Moment M ({m_unit})", fontsize=8)
     ax.grid(True, linestyle="--", alpha=0.5)
@@ -395,6 +448,18 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
     a_unit = "mm²" if is_si else "in²"
     m_unit = "kN·m" if is_si else "kip-in"
 
+    preset_options = [
+        "Custom Inputs",
+        "CE 152 Example 3 (b=250mm, d=575mm, f'c=28MPa, fy=420MPa, As=1470mm²)",
+        "CE 152 Slide 35 Balanced Condition (b=250mm, d=575mm, f'c=28MPa, fy=420MPa)",
+    ]
+
+    default_preset = "Custom Inputs"
+    if pv.get("preset") == "ex3":
+        default_preset = preset_options[1]
+    elif pv.get("preset") == "slide35":
+        default_preset = preset_options[2]
+
     layout = [
         [sg.Text("NSCP 2015 / ACI 318 RC Flexure Solver (LaTeX & Multi-Units)", font=("Helvetica", 12, "bold"))],
         [
@@ -403,9 +468,7 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
                      default_value="US Customary (kip-in, 1/in, ksi, in)" if not is_si else "SI Metric (kN·m, rad/m, MPa, mm)",
                      key="-UNITS-", enable_events=True, readonly=True),
             sg.Text("  Preset Examples:", font=("Helvetica", 9, "bold")),
-            sg.Combo(["Custom Inputs", "CE 152 Example 3 (b=250mm, d=575mm, f'c=28MPa, fy=420MPa, As=1470mm²)"],
-                     default_value="Custom Inputs" if not pv else "CE 152 Example 3 (b=250mm, d=575mm, f'c=28MPa, fy=420MPa, As=1470mm²)",
-                     key="-PRESET-", enable_events=True, readonly=True),
+            sg.Combo(preset_options, default_value=default_preset, key="-PRESET-", enable_events=True, readonly=True),
         ],
         [sg.HorizontalSeparator()],
         # Input Section
@@ -456,6 +519,10 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
                             [[sg.Image(key="-IMAGE-STEPS-", size=(460, 270))]],
                         ),
                         sg.Tab(
+                            "Parametric M-ϕ vs As",
+                            [[sg.Image(key="-IMAGE-AS-PARAM-", size=(460, 270))]],
+                        ),
+                        sg.Tab(
                             "Whitney Stress UDL Diagram",
                             [[sg.Image(key="-IMAGE-STRESS-", size=(460, 270))]],
                         ),
@@ -493,7 +560,11 @@ def run_gui() -> None:
 
         if event == "-PRESET-":
             if "CE 152 Example 3" in values["-PRESET-"]:
-                pv = {"fc": "28.0", "fy": "420.0", "b": "250.0", "d": "575.0", "as": "1470.0", "mserv": "100.0", "mult": "220.0"}
+                pv = {"fc": "28.0", "fy": "420.0", "b": "250.0", "d": "575.0", "as": "1470.0", "mserv": "100.0", "mult": "220.0", "preset": "ex3"}
+                window.close()
+                window = create_window("SI", preset_vals=pv)
+            elif "CE 152 Slide 35" in values["-PRESET-"]:
+                pv = {"fc": "28.0", "fy": "420.0", "b": "250.0", "d": "575.0", "as": "4072.9", "mserv": "100.0", "mult": "220.0", "preset": "slide35"}
                 window.close()
                 window = create_window("SI", preset_vals=pv)
             continue
@@ -511,6 +582,7 @@ def run_gui() -> None:
 
                 res = solve_flexure_section(fc, fy, b, d, a_s, m_serv, m_ult, selected_unit)
                 inel = res["inelastic"]
+                bal = res["balanced"]
                 mc = res["mc_data"]
                 m_unit = mc["m_unit"]
                 f_unit = "MPa" if selected_unit == "SI" else "ksi"
@@ -525,6 +597,12 @@ def run_gui() -> None:
                         return "Region Y->U (Inelastic Cracked)"
 
                 out_text = (
+                    f"--- BALANCED CONDITION (SLIDE 35) ---\n"
+                    f"Balanced NA Depth c_bal: {bal['c_bal']:.2f} {l_unit}\n"
+                    f"Balanced Block a_bal : {bal['a_bal']:.2f} {l_unit}\n"
+                    f"Balanced Steel As_bal: {bal['A_s_bal']:.1f} {l_unit}²\n"
+                    f"Balanced Ratio rho_b : {bal['rho_b']*100:.2f}%\n"
+                    f"Max Tens-Ctrl rho_max : {bal['rho_max']*100:.2f}%\n\n"
                     f"--- BEHAVIOR REGIONS BREAKDOWN ---\n"
                     f"O->C Elastic Uncracked: 0 <= M <= {mc['M_cr']:.1f} {m_unit}\n"
                     f"C->Y Elastic Cracked  : {mc['M_cr']:.1f} < M <= {mc['M_y']:.1f} {m_unit}\n"
@@ -535,16 +613,8 @@ def run_gui() -> None:
                     f"Stress Block Depth (a): {inel['a']:.2f} {l_unit}\n"
                     f"Inelastic NA Depth (c): {inel['c']:.2f} {l_unit}\n"
                     f"Steel Strain (eps_s)  : {inel['eps_s']:.5f}\n"
-                    f"Phi Factor (phi)      : {inel['phi']:.2f}\n"
                     f"Nominal Cap. (M_n)    : {inel['M_n']:.1f} {m_unit}\n"
-                    f"Design Cap. (phi*M_n) : {inel['phi_M_n']:.1f} {m_unit} ({res['util_ult']*100:.1f}%)\n\n"
-                    f"--- ELASTIC (WSD) PARAMETERS ---\n"
-                    f"Concrete Modulus (E_c) : {res['E_c']:.2f} {f_unit}\n"
-                    f"Modular Ratio (n)     : {res['n']:.2f}\n"
-                    f"Elastic NA Depth (x)  : {res['x']:.2f} {l_unit}\n"
-                    f"Service f_c / Allow   : {res['f_c']:.2f} / {res['f_c_allow']:.2f} {f_unit}\n"
-                    f"Service f_s / Allow   : {res['f_s']:.2f} / {res['f_s_allow']:.2f} {f_unit}\n"
-                    f"Curvature Ductility µ_ϕ: {mc['ductility_ratio']:.2f}\n"
+                    f"Design Cap. (phi*M_n) : {inel['phi_M_n']:.1f} {m_unit} ({res['util_ult']*100:.1f}%)\n"
                     f"---------------------------------\n"
                     f"OVERALL DESIGN STATUS : {res['status']}"
                 )
@@ -552,6 +622,9 @@ def run_gui() -> None:
 
                 png_steps = generate_step_by_step_latex_png(res)
                 window["-IMAGE-STEPS-"].update(data=png_steps)
+
+                png_as_param = generate_as_parametric_moment_curvature_plot_png(res)
+                window["-IMAGE-AS-PARAM-"].update(data=png_as_param)
 
                 png_stress = generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel, selected_unit)
                 window["-IMAGE-STRESS-"].update(data=png_stress)
@@ -569,23 +642,26 @@ def run_gui() -> None:
 
 
 def self_check_headless() -> None:
-    """Headless self-check for solver_gui.py and CE 152 Example 3."""
+    """Headless self-check for solver_gui.py, CE 152 Example 3, and Slide 35."""
     res_ce152 = solve_flexure_section(28.0, 420.0, 250.0, 575.0, 1470.0, 100.0, 220.0, "SI")
     assert abs(res_ce152["inelastic"]["a"] - 103.76) < 0.1
+    assert abs(res_ce152["balanced"]["c_bal"] - 338.24) < 0.1
 
     res_us = solve_flexure_section(4.0, 60.0, 12.0, 20.0, 2.37, 1200.0, 2000.0, "US")
     assert res_us["status"] == "PASS"
 
     png_steps = generate_step_by_step_latex_png(res_ce152)
+    png_as_param = generate_as_parametric_moment_curvature_plot_png(res_ce152)
     png_stress = generate_inelastic_diagram_png(250.0, 575.0, 1470.0, 28.0, 420.0, res_ce152["inelastic"], "SI")
     png_mph = generate_moment_curvature_plot_png(res_ce152["mc_data"], 100.0, 220.0)
     png_latex = generate_latex_summary_card_png(res_ce152)
 
     assert len(png_steps) > 1000
+    assert len(png_as_param) > 1000
     assert len(png_stress) > 1000
     assert len(png_mph) > 1000
     assert len(png_latex) > 1000
-    print("solver_gui CE 152 Example 3 & Aligned Step-by-Step LaTeX check passed!")
+    print("solver_gui CE 152 Slide 35 & Parametric As check passed!")
 
 
 if __name__ == "__main__":

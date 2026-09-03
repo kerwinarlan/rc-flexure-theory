@@ -1,13 +1,13 @@
 # Basic Flexure Theory for Reinforced Concrete (NSCP 2015 / ACI 318)
 
-Calculates fundamental elastic (WSD), inelastic (USD), and 3-region moment-curvature ($M - \phi$) flexural parameters for reinforced concrete beams per NSCP 2015 Volume I and ACI 318.
+Calculates fundamental elastic (WSD), inelastic (USD), balanced reinforcement ($\rho_b, \rho_{max}$), and 3-region moment-curvature ($M - \phi$) flexural parameters for reinforced concrete beams per NSCP 2015 Volume I and ACI 318.
 
 ## About
 
 This repository provides core equations for concrete elastic modulus, modular ratio, neutral axis depth, working stresses, ultimate strength capacity ($\phi M_n$), and 3-region moment-curvature response.
-It solves classic university flexure problems including **CE 152 Example 3** ($b=250\text{ mm}, d=575\text{ mm}, f'_c=28\text{ MPa}, f_y=420\text{ MPa}, A_s=1470\text{ mm}^2 \rightarrow a=103.76\text{ mm}$).
+It solves classic university flexure problems including **CE 152 Example 3** ($b=250\text{ mm}, d=575\text{ mm}, f'_c=28\text{ MPa}, f_y=420\text{ MPa}, A_s=1470\text{ mm}^2 \rightarrow a=103.76\text{ mm}$) and **CE 152 Slide 35 Balanced Condition** ($c_{bal}=338.24\text{ mm}, \rho_b=2.83\%$).
 It supports both **US Customary units** ($\text{kip-in}, 1/\text{in}, \text{ksi}, \text{in}$) and **SI Metric units** ($\text{kN}\cdot\text{m}, \text{rad/m}, \text{MPa}, \text{mm}$).
-The application includes a desktop solver GUI with **Step-by-Step LaTeX Solution Cards**, **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$), and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
+The application includes a desktop solver GUI with **Parametric $M - \phi$ vs $A_s$ Study Graphs**, **Step-by-Step Board Solution Cards** (aligned $=$ signs), **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$), and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
 It also includes an **NSCP 2015 OCR Indexer System** (`nscp_indexer.py`) for cover-to-cover PDF study and knowledge extraction.
 
 All calculations follow the National Structural Code of the Philippines (NSCP 2015, 7th Edition) and ACI 318.
@@ -29,6 +29,12 @@ The flexural behavior of a reinforced concrete section spans three distinct phys
    * Concrete enters non-linear compressive range modeled by Whitney rectangular UDL stress block ($a = \beta_1 c$).
    * Equilibrium: $C = 0.85 f'_c b a \leftarrow = T = A_s f_s \rightarrow$ `[NSCP 2015 Sec. 422.2]`.
    * Nominal capacity: $M_n = A_s f_s \left(d - \frac{a}{2}\right)$, Curvature ductility ratio: $\mu_\phi = \frac{\phi_u}{\phi_y}$.
+
+## Balanced Condition Equations (Slide 35)
+
+$$c_{bal} = \left( \frac{\epsilon_{cu}}{\epsilon_{cu} + \epsilon_y} \right) d = \left( \frac{600}{600 + f_y} \right) d \quad \text{[SI]}$$
+$$a_{bal} = \beta_1 c_{bal}, \quad A_{s,bal} = \frac{0.85 f'_c b a_{bal}}{f_y}, \quad \rho_b = \frac{0.85 \beta_1 f'_c}{f_y} \left( \frac{600}{600 + f_y} \right)$$
+$$\rho_{max} = \frac{0.85 \beta_1 f'_c}{f_y} \left( \frac{0.003}{0.003 + 0.005} \right) = 0.375 \frac{0.85 \beta_1 f'_c}{f_y} \quad \text{[Tension-Controlled]}$$
 
 ## Key Formulas (LaTeX)
 
@@ -57,8 +63,8 @@ $$\phi_u = \frac{\epsilon_u}{c} = \frac{0.003}{c}, \quad \mu_\phi = \frac{\phi_u
 
 ```
 rc-flexure-theory/
-├── flexure.py                 # Core NSCP 2015 / ACI 318 flexure module (US/SI)
-├── solver_gui.py              # FreeSimpleGUI solver GUI with Step-by-Step LaTeX cards
+├── flexure.py                 # Core NSCP 2015 / ACI 318 flexure & balanced module (US/SI)
+├── solver_gui.py              # FreeSimpleGUI solver GUI with Parametric As M-phi plots
 ├── nscp_indexer.py            # NSCP 2015 PDF OCR study & search tool
 ├── NSCP_AGENT_PROTOCOL.md     # Agent study protocol & review guidelines
 ├── PARAMETER_LEDGER.md        # Parameter provenance tracking table
@@ -88,10 +94,11 @@ python3 flexure.py
 Expected headless output:
 ```
 Self-check passed:
-  CE 152 Example 3: a = 103.76 mm (expected 103.76 mm), c = 122.08 mm
-  US Customary: M_cr=480.3 kip-in, M_n=2596.2 kip-in
-  Ductility Ratio (mu_phi): 4.76
-solver_gui CE 152 Example 3 & Step-by-Step LaTeX check passed!
+  CE 152 Example 3 : a = 103.76 mm (expected 103.76 mm), c = 122.08 mm
+  CE 152 Slide 35   : c_bal = 338.24 mm, rho_b = 2.83%
+  US Customary      : M_cr=480.3 kip-in, M_n=2596.2 kip-in
+  Ductility Ratio   : 4.76
+solver_gui CE 152 Slide 35 & Parametric As check passed!
 ```
 
 ## Parameter Provenance

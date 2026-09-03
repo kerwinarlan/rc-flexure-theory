@@ -76,10 +76,7 @@ def calculate_service_stresses(
 def calculate_inelastic_neutral_axis(
     b: float, d: float, a_s: float, fc_prime: float, fy: float, units: str = "US", lambda_factor: float = 1.0
 ) -> tuple[float, float, float, float]:
-    """Calculate inelastic neutral axis depth c, stress block a, steel stress f_s, and strain eps_s.
-    
-    Includes lightweight concrete factor lambda (default 1.0 for normal weight).
-    """
+    """Calculate inelastic neutral axis depth c, stress block a, steel stress f_s, and strain eps_s."""
     e_s = E_S_SI if units.upper() == "SI" else E_S_US
     beta1 = calculate_beta_1(fc_prime, units)
     eps_y = fy / e_s
@@ -100,6 +97,39 @@ def calculate_inelastic_neutral_axis(
     eps_s = EPS_U_GIVEN * (d - c) / c
     f_s = e_s * eps_s
     return c, a, f_s, eps_s
+
+
+def calculate_balanced_condition(
+    b: float, d: float, fc_prime: float, fy: float, units: str = "US", lambda_factor: float = 1.0
+) -> dict[str, float]:
+    """Calculate balanced condition parameters (c_bal, a_bal, A_s_bal, rho_b, rho_max) per NSCP 2015 Sec 422 / Slide 35."""
+    is_si = units.upper() == "SI"
+    e_s = E_S_SI if is_si else E_S_US
+    beta1 = calculate_beta_1(fc_prime, units)
+    eps_y = fy / e_s
+
+    # Balanced strain compatibility: c_bal / d = eps_cu / (eps_cu + eps_y)
+    c_bal = (EPS_U_GIVEN / (EPS_U_GIVEN + eps_y)) * d
+    a_bal = beta1 * c_bal
+    a_s_bal = (0.85 * lambda_factor * fc_prime * b * a_bal) / fy
+    rho_b = a_s_bal / (b * d)
+
+    # Tension-controlled maximum reinforcement ratio (eps_t = 0.005)
+    c_max = (EPS_U_GIVEN / (EPS_U_GIVEN + 0.005)) * d
+    a_max = beta1 * c_max
+    a_s_max = (0.85 * lambda_factor * fc_prime * b * a_max) / fy
+    rho_max = a_s_max / (b * d)
+
+    return {
+        "c_bal": c_bal,
+        "a_bal": a_bal,
+        "A_s_bal": a_s_bal,
+        "rho_b": rho_b,
+        "c_max": c_max,
+        "a_max": a_max,
+        "A_s_max": a_s_max,
+        "rho_max": rho_max,
+    }
 
 
 def calculate_phi_factor(eps_t: float, fy: float, units: str = "US") -> float:
@@ -133,6 +163,8 @@ def calculate_inelastic_capacity(
     else:
         failure_mode = "Transition Region"
 
+    bal = calculate_balanced_condition(b, d, fc_prime, fy, units, lambda_factor)
+
     return {
         "c": c,
         "a": a,
@@ -143,6 +175,7 @@ def calculate_inelastic_capacity(
         "phi_M_n": phi_m_n_mom,
         "failure_mode": failure_mode,
         "lambda": lambda_factor,
+        "balanced": bal,
     }
 
 
@@ -209,11 +242,16 @@ def calculate_moment_curvature(
 
 
 def self_check() -> None:
-    """Run verification checks on flexure theory calculations for US, SI, and CE 152 Example 3."""
+    """Run verification checks on flexure theory calculations for US, SI, CE 152 Example 3, and Slide 35."""
     # CE 152 Example 3 verification
     res_ce152 = calculate_inelastic_capacity(250.0, 575.0, 1470.0, 28.0, 420.0, units="SI")
     assert abs(res_ce152["a"] - 103.76) < 0.1
     assert abs(res_ce152["c"] - 122.08) < 0.1
+
+    # CE 152 Slide 35 Balanced Condition verification
+    bal_slide35 = calculate_balanced_condition(250.0, 575.0, 28.0, 420.0, units="SI")
+    assert abs(bal_slide35["c_bal"] - 338.24) < 0.1
+    assert abs(bal_slide35["rho_b"] - 0.02833) < 0.001
 
     # US Customary test case
     mc_us = calculate_moment_curvature(12.0, 20.0, 22.5, 2.37, 4.0, 60.0, units="US")
@@ -222,9 +260,10 @@ def self_check() -> None:
 
     print(
         f"Self-check passed:\n"
-        f"  CE 152 Example 3: a = {res_ce152['a']:.2f} mm (expected 103.76 mm), c = {res_ce152['c']:.2f} mm\n"
-        f"  US Customary: M_cr={mc_us['M_cr']:.1f} kip-in, M_n={mc_us['M_n']:.1f} kip-in\n"
-        f"  Ductility Ratio (mu_phi): {mc_us['ductility_ratio']:.2f}"
+        f"  CE 152 Example 3 : a = {res_ce152['a']:.2f} mm (expected 103.76 mm), c = {res_ce152['c']:.2f} mm\n"
+        f"  CE 152 Slide 35   : c_bal = {bal_slide35['c_bal']:.2f} mm, rho_b = {bal_slide35['rho_b']*100:.2f}%\n"
+        f"  US Customary      : M_cr={mc_us['M_cr']:.1f} kip-in, M_n={mc_us['M_n']:.1f} kip-in\n"
+        f"  Ductility Ratio   : {mc_us['ductility_ratio']:.2f}"
     )
 
 
