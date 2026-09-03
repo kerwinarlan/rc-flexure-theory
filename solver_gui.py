@@ -1,4 +1,4 @@
-"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Whitney UDL Stress Diagram, LaTeX Equations & US/SI Unit Support.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Perfectly Aligned Whitney UDL Stress Diagram, LaTeX Equations & US/SI Unit Support.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -104,7 +104,7 @@ def solve_flexure_section(
 def generate_inelastic_diagram_png(
     b: float, d: float, as_area: float, fc_prime: float, fy: float, inelastic: dict, units: str = "US"
 ) -> bytes:
-    """Generate a 3-panel matplotlib diagram of the cracked section with Whitney UDL stress block."""
+    """Generate a 3-panel matplotlib diagram with perfectly aligned horizontal reference lines across subplots."""
     c = float(inelastic["c"])
     a = float(inelastic["a"])
     eps_s = float(inelastic["eps_s"])
@@ -114,79 +114,78 @@ def generate_inelastic_diagram_png(
 
     f_unit = "MPa" if is_si else "ksi"
     l_unit = "mm" if is_si else "in"
+    l_sym = "mm" if is_si else '"'
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(6.8, 3.2), dpi=100)
+    # Share Y axis across all 3 subplots to guarantee exact vertical line alignment
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(7.2, 3.4), sharey=True, dpi=100)
     fig.patch.set_facecolor("#FAFAFA")
+
+    y_min = -h - (10.0 if is_si else 1.5)
+    y_max = 10.0 if is_si else 1.5
 
     # Panel 1: Cross Section Geometry
     ax1.set_title(f"Beam Section ({l_unit})", fontsize=9, fontweight="bold")
     ax1.plot([0, b, b, 0, 0], [0, 0, -h, -h, 0], "k-", lw=1.5)
-    ax1.fill_between([0, b], 0, -a, color="#FFCC80", alpha=0.7, label=f"a={a:.2f}{l_unit}")
-    ax1.axhline(-c, color="red", linestyle="--", lw=1.2, label=f"c={c:.2f}{l_unit}")
+    ax1.fill_between([0, b], 0, -a, color="#FFCC80", alpha=0.7)
     n_bars = 3
     xs = [b * (i + 1) / (n_bars + 1) for i in range(n_bars)]
     ax1.scatter(xs, [-d] * n_bars, color="black", s=50, zorder=5)
-    ax1.set_xlim(-b * 0.2, b * 1.2)
-    ax1.set_ylim(-h - (10 if is_si else 0.5), 10 if is_si else 0.5)
-    ax1.set_aspect("equal")
-    ax1.axis("off")
-    ax1.legend(loc="lower right", fontsize=6.5, framealpha=0.8)
+    ax1.set_xlim(-b * 0.35, b * 1.35)
 
     # Panel 2: Inelastic Strain Profile
     ax2.set_title("Inelastic Strain (ε)", fontsize=9, fontweight="bold")
     ax2.axvline(0, color="gray", lw=0.8)
-    ax2.axhline(-c, color="red", linestyle="--", lw=1.0)
     ax2.plot([-0.003, eps_s], [0, -d], "b-o", lw=1.8, ms=4)
     ax2.fill_betweenx([0, -c], 0, [-0.003, 0], color="blue", alpha=0.15)
     ax2.fill_betweenx([-c, -d], 0, [0, eps_s], color="red", alpha=0.15)
-    ax2.text(-0.003, 5 if is_si else 0.2, "εu=0.003", fontsize=7, color="blue", ha="center")
-    ax2.text(eps_s, -d - (15 if is_si else 0.8), f"εs={eps_s:.5f}", fontsize=7, color="red", ha="center")
-    ax2.set_ylim(-h - (10 if is_si else 0.5), 10 if is_si else 0.5)
-    ax2.axis("off")
+    ax2.text(-0.003, 0.8 if not is_si else 5.0, "εu=0.003", fontsize=7, color="blue", ha="center")
+    ax2.text(eps_s, -d - (1.2 if not is_si else 15.0), f"εs={eps_s:.5f}", fontsize=7, color="red", ha="center")
+    ax2.set_xlim(-0.005, max(0.005, eps_s * 1.3))
 
-    # Panel 3: Whitney Stress Block UDL & Resultants C (left) and T (right)
+    # Panel 3: Whitney Stress UDL Box & Force Resultants
     ax3.set_title(f"Whitney Stress UDL ({f_unit})", fontsize=9, fontweight="bold")
     stress_mag = 0.85 * fc_prime
-
-    # Stretch reference lines extending across
     s_x = stress_mag * 1.4
-    ax3.plot([-s_x, s_x], [0, 0], "k--", lw=0.8, alpha=0.7)  # Top fiber
-    ax3.plot([-s_x, s_x], [-a, -a], "darkorange", lw=0.8, linestyle=":")  # Whitney block bottom
-    ax3.plot([-s_x, s_x], [-c, -c], "r--", lw=1.0)  # Neutral Axis
-    ax3.plot([-s_x, s_x], [-h, -h], "k--", lw=0.8, alpha=0.5)  # Bottom fiber
 
-    # Section face line at x=0
     ax3.plot([0, 0], [0, -h], "k-", lw=1.5)
-
-    # Whitney UDL stress block box
     ax3.plot([0, stress_mag, stress_mag, 0], [0, 0, -a, -a], color="orange", lw=1.5)
     ax3.fill_betweenx([0, -a], 0, stress_mag, color="orange", alpha=0.25)
 
-    # UDL compression arrows pointing LEFT (<-) into concrete section
+    # UDL compression arrows pointing LEFT (<-)
     n_udl = 5
     y_udls = np.linspace(-a * 0.15, -a * 0.85, n_udl)
     for y_i in y_udls:
         ax3.annotate("", xy=(0, y_i), xytext=(stress_mag, y_i),
                      arrowprops=dict(arrowstyle="->", color="darkorange", lw=1.0))
 
-    # Central Resultant Force C at y = -a/2 pointing LEFT (<-)
+    # Resultant Compression Force C pointing LEFT (<-)
     y_c = -a / 2.0
-    ax3.annotate("", xy=(-s_x * 0.7, y_c), xytext=(stress_mag * 1.1, y_c),
-                 arrowprops=dict(arrowstyle="->", color="darkorange", lw=2.2))
-    ax3.text(-s_x * 0.75, y_c, "C = 0.85f'c·b·a", color="darkorange", fontweight="bold", fontsize=7, ha="right", va="center")
+    ax3.annotate("", xy=(-s_x * 0.6, y_c), xytext=(stress_mag * 1.1, y_c),
+                 arrowprops=dict(arrowstyle="->", color="darkorange", lw=2.0))
+    ax3.text(-s_x * 0.65, y_c, "C = 0.85f'c·b·a", color="darkorange", fontweight="bold", fontsize=7, ha="right", va="center")
 
-    # Steel Tension Force T at y = -d pointing RIGHT (->)
+    # Resultant Tension Force T pointing RIGHT (->)
     ax3.annotate("", xy=(s_x * 0.8, -d), xytext=(0, -d),
-                 arrowprops=dict(arrowstyle="->", color="red", lw=2.2))
+                 arrowprops=dict(arrowstyle="->", color="red", lw=2.0))
     ax3.text(s_x * 0.85, -d, "T = As·fs", color="red", fontweight="bold", fontsize=7, ha="left", va="center")
+    ax3.set_xlim(-s_x * 1.5, s_x * 1.5)
 
-    # Annotations
-    ax3.text(-s_x, 0, "Top Fiber", fontsize=6.5, color="black", va="bottom")
-    ax3.text(-s_x, -a, f"a={a:.2f}{l_unit}", fontsize=6.5, color="darkorange", va="bottom")
-    ax3.text(-s_x, -c, f"N.A. c={c:.2f}{l_unit}", fontsize=6.5, color="red", va="bottom")
+    # Perfectly aligned shared horizontal reference lines stretching across ALL THREE panels!
+    for ax in (ax1, ax2, ax3):
+        ax.axhline(0, color="black", linestyle="--", lw=0.8, alpha=0.6)        # Top fiber y=0
+        ax.axhline(-a, color="darkorange", linestyle=":", lw=0.9)              # Whitney block bottom y=-a
+        ax.axhline(-c, color="red", linestyle="--", lw=1.0)                    # Neutral Axis y=-c
+        ax.axhline(-d, color="blue", linestyle=":", lw=0.7, alpha=0.5)         # Steel centroid y=-d
+        ax.axhline(-h, color="black", linestyle="--", lw=0.8, alpha=0.6)       # Bottom fiber y=-h
+        ax.set_ylim(y_min, y_max)
+        ax.axis("off")
 
-    ax3.set_ylim(-h - (10 if is_si else 0.5), 10 if is_si else 0.5)
-    ax3.axis("off")
+    # Labels on Panel 1 left
+    ax1.text(-b * 0.38, 0, "Top Fiber", fontsize=6.5, color="black", va="center", ha="right")
+    ax1.text(-b * 0.38, -a, f"a={a:.2f}{l_sym}", fontsize=6.5, color="darkorange", va="center", ha="right")
+    ax1.text(-b * 0.38, -c, f"N.A. c={c:.2f}{l_sym}", fontsize=6.5, color="red", va="center", ha="right")
+    ax1.text(-b * 0.38, -d, f"d={d:.1f}{l_sym}", fontsize=6.5, color="blue", va="center", ha="right")
+    ax1.text(-b * 0.38, -h, f"h={h:.1f}{l_sym}", fontsize=6.5, color="black", va="center", ha="right")
 
     plt.tight_layout()
 
@@ -368,12 +367,12 @@ def create_window(units: str = "US") -> sg.Window:
                 [
                     [
                         sg.Tab(
-                            "Moment - Curvature (M - ϕ)",
-                            [[sg.Image(key="-IMAGE-MPH-", size=(460, 270))]],
-                        ),
-                        sg.Tab(
                             "Whitney Stress UDL Diagram",
                             [[sg.Image(key="-IMAGE-STRESS-", size=(460, 270))]],
+                        ),
+                        sg.Tab(
+                            "Moment - Curvature (M - ϕ)",
+                            [[sg.Image(key="-IMAGE-MPH-", size=(460, 270))]],
                         ),
                         sg.Tab(
                             "LaTeX Math Derivation",
