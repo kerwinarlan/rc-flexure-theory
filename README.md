@@ -1,11 +1,11 @@
 # Basic Flexure Theory for Reinforced Concrete (NSCP 2015 / ACI 318)
 
-Calculates fundamental elastic (WSD), inelastic (USD), balanced reinforcement ($\rho_b, \rho_{max}$), and 3-region moment-curvature ($M - \phi$) flexural parameters for reinforced concrete beams per NSCP 2015 Volume I and ACI 318.
+Calculates fundamental elastic (WSD), inelastic (USD), balanced reinforcement ($\rho_b, \rho_{max}$), and continuous fiber-integrated 3-region moment-curvature ($M - \phi$) flexural parameters for reinforced concrete beams per NSCP 2015 Volume I and ACI 318.
 
 ## About
 
-This repository provides core equations for concrete elastic modulus, modular ratio, neutral axis depth, working stresses, ultimate strength capacity ($\phi M_n$), and 3-region moment-curvature response.
-It solves classic university flexure problems including **CE 152 Example 3** ($b=250\text{ mm}, d=575\text{ mm}, f'_c=28\text{ MPa}, f_y=420\text{ MPa}, A_s=1470\text{ mm}^2 \rightarrow a=103.76\text{ mm}$) and **CE 152 Slide 35 Balanced Condition** ($c_{bal}=338.24\text{ mm}, \rho_b=2.83\%$).
+This repository provides core equations for concrete elastic modulus, modular ratio, neutral axis depth, working stresses, ultimate strength capacity ($\phi M_n$), and continuous moment-curvature response.
+It solves classic university flexure problems including **CE 152 Example 3** ($a=103.76\text{ mm}$), **CE 152 Slide 35 Balanced Condition** ($c_{bal}=338.24\text{ mm}, \rho_b=2.83\%$), and **CE 152 Slide 5425** ($M_{max}=2800\text{ kip-in}$ to $6200\text{ kip-in}$).
 It supports both **US Customary units** ($\text{kip-in}, 1/\text{in}, \text{ksi}, \text{in}$) and **SI Metric units** ($\text{kN}\cdot\text{m}, \text{rad/m}, \text{MPa}, \text{mm}$).
 The application includes a desktop solver GUI with **Interactive Parametric $M - \phi$ Variable Dropdowns** ($A_s, d, f'_c, b, f_y$), **Step-by-Step Board Solution Cards** (aligned $=$ signs), **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$), and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
 It also includes an **NSCP 2015 OCR Indexer System** (`nscp_indexer.py`) for cover-to-cover PDF study and knowledge extraction.
@@ -14,7 +14,7 @@ All calculations follow the National Structural Code of the Philippines (NSCP 20
 
 ## Parametric $M - \phi$ Variable Comparison ($A_s, d, f'_c, b, f_y$)
 
-The GUI dropdown allows plotting moment-curvature curves across 5 design variables:
+The GUI dropdown allows plotting continuous moment-curvature curves across 5 design variables:
 
 1. **Steel Area ($A_s$)**: Increasing $A_s$ increases $M_n$ (taller curve) but reduces ultimate curvature $\phi_u$ (less ductile).
 2. **Effective Depth ($d$)**: Increasing $d$ increases internal moment arm $(d - a/2)$ and flexural capacity $M_n$.
@@ -73,8 +73,8 @@ $$\phi_u = \frac{\epsilon_u}{c} = \frac{0.003}{c}, \quad \mu_\phi = \frac{\phi_u
 
 ```
 rc-flexure-theory/
-├── flexure.py                 # Core NSCP 2015 / ACI 318 flexure & balanced module (US/SI)
-├── solver_gui.py              # FreeSimpleGUI solver GUI with Parametric Variable M-phi plots
+├── flexure.py                 # Core NSCP 2015 / ACI 318 flexure & fiber module (US/SI)
+├── solver_gui.py              # FreeSimpleGUI solver GUI with Parametric M-phi plots
 ├── nscp_indexer.py            # NSCP 2015 PDF OCR study & search tool
 ├── NSCP_AGENT_PROTOCOL.md     # Agent study protocol & review guidelines
 ├── PARAMETER_LEDGER.md        # Parameter provenance tracking table
@@ -106,9 +106,9 @@ Expected headless output:
 Self-check passed:
   CE 152 Example 3 : a = 103.76 mm (expected 103.76 mm), c = 122.08 mm
   CE 152 Slide 35   : c_bal = 338.24 mm, rho_b = 2.83%
-  US Customary      : M_cr=480.3 kip-in, M_n=2596.2 kip-in
+  Continuous M-phi : 59 points, M_n=2596.2 kip-in
   Ductility Ratio   : 4.76
-solver_gui 5 Parametric Variables & Dropdown Plot View check passed!
+solver_gui CE 152 Slide 5425 & Continuous Fiber M-phi check passed!
 ```
 
 ## Parameter Provenance

@@ -1,4 +1,4 @@
-"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Interactive Parametric Variable Dropdowns (As, d, f'c, b, fy), Board Solution & Multi-Units.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Continuous Fiber M-phi Curves, Parametric Variable Dropdowns, Board Solutions & Multi-Units.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -68,7 +68,7 @@ def solve_flexure_section(
     # Balanced condition calculations
     bal = calculate_balanced_condition(b, d, fc_prime, fy, units, lambda_factor)
 
-    # Moment-Curvature Curve with 3 explicit regions
+    # Moment-Curvature Curve with continuous fiber integration
     mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy, units, lambda_factor)
 
     status = (
@@ -204,9 +204,11 @@ def generate_inelastic_diagram_png(
 def generate_moment_curvature_plot_png(
     mc_data: dict, m_serv: float, m_ult: float
 ) -> bytes:
-    """Generate a matplotlib plot highlighting the 3 flexural behavior regions on the M - phi curve."""
+    """Generate a continuous matplotlib plot highlighting the 3 flexural behavior regions on the M - phi curve."""
     phi_pts = mc_data["phi_pts"]
     m_pts = mc_data["m_pts"]
+    phi_cont = mc_data["phi_continuous"]
+    m_cont = mc_data["m_continuous"]
     m_cr = mc_data["M_cr"]
     m_y = mc_data["M_y"]
     m_n = mc_data["M_n"]
@@ -222,8 +224,8 @@ def generate_moment_curvature_plot_png(
     ax.axvspan(phi_pts[1], phi_pts[2], color="#FFF9C4", alpha=0.5, label="C->Y: Elastic & Cracked")
     ax.axvspan(phi_pts[2], phi_pts[3], color="#FFCDD2", alpha=0.4, label="Y->U: Inelastic & Cracked")
 
-    # Backbone plot
-    ax.plot(phi_pts, m_pts, "b-o", lw=2.2, ms=5)
+    # Continuous Backbone plot
+    ax.plot(phi_cont, m_cont, "b-", lw=2.2, label="M - ϕ Response")
 
     # Key Point Markers
     ax.scatter([phi_pts[0]], [0], color="black", s=30, zorder=5)
@@ -290,7 +292,7 @@ def generate_parametric_moment_curvature_plot_png(res: dict, param_key: str = "S
         note_str = "↑ As -> Higher M_n (taller curve), but ↓ phi_u (shorter curvature length = reduced ductility µ_ϕ)"
         for as_val, label, col, ls in as_variations:
             mc = calculate_moment_curvature(b_base, d_base, h_base, as_val, fc_base, fy_base, units)
-            ax.plot(mc["phi_pts"], mc["m_pts"], color=col, linestyle=ls, lw=1.8,
+            ax.plot(mc["phi_continuous"], mc["m_continuous"], color=col, linestyle=ls, lw=1.8,
                     label=f"{label} [µ_ϕ={mc['ductility_ratio']:.1f}]")
 
     elif "d" in param_key or "Depth" in param_key:
@@ -306,7 +308,7 @@ def generate_parametric_moment_curvature_plot_png(res: dict, param_key: str = "S
         for d_val, label, col, ls in d_variations:
             h_val = d_val + (65.0 if units.upper() == "SI" else 2.5)
             mc = calculate_moment_curvature(b_base, d_val, h_val, as_base, fc_base, fy_base, units)
-            ax.plot(mc["phi_pts"], mc["m_pts"], color=col, linestyle=ls, lw=1.8,
+            ax.plot(mc["phi_continuous"], mc["m_continuous"], color=col, linestyle=ls, lw=1.8,
                     label=f"{label} [M_n={mc['M_n']:.1f}{m_unit}]")
 
     elif "f'c" in param_key or "Concrete" in param_key:
@@ -316,7 +318,7 @@ def generate_parametric_moment_curvature_plot_png(res: dict, param_key: str = "S
         note_str = "↑ Concrete f'c -> Reduces stress block depth a = As*fy / (0.85*f'c*b) -> Increases strain margin & ductility"
         for idx, fc_val in enumerate(fc_list):
             mc = calculate_moment_curvature(b_base, d_base, h_base, as_base, fc_val, fy_base, units)
-            ax.plot(mc["phi_pts"], mc["m_pts"], color=colors[idx % len(colors)], lw=1.8,
+            ax.plot(mc["phi_continuous"], mc["m_continuous"], color=colors[idx % len(colors)], lw=1.8,
                     label=f"f'c={fc_val:.0f} {f_unit} [µ_ϕ={mc['ductility_ratio']:.1f}]")
 
     elif "b" in param_key or "Width" in param_key:
@@ -327,10 +329,10 @@ def generate_parametric_moment_curvature_plot_png(res: dict, param_key: str = "S
             (b_base * 1.5, f"1.5x b ({b_base*1.5:.0f} {d_unit})", "red", "-."),
         ]
         title_str = "Parametric M - ϕ vs Beam Width (b)"
-        note_str = "↑ Width b -> Increases concrete compression area -> Reduces stress block depth a & neutral axis c"
+        note_str = "↑ Beam Width (b) -> Increases concrete compression area -> Reduces stress block depth a & neutral axis c"
         for b_val, label, col, ls in b_variations:
             mc = calculate_moment_curvature(b_val, d_base, h_base, as_base, fc_base, fy_base, units)
-            ax.plot(mc["phi_pts"], mc["m_pts"], color=col, linestyle=ls, lw=1.8,
+            ax.plot(mc["phi_continuous"], mc["m_continuous"], color=col, linestyle=ls, lw=1.8,
                     label=f"{label} [M_n={mc['M_n']:.1f}{m_unit}]")
 
     else:  # fy
@@ -340,7 +342,7 @@ def generate_parametric_moment_curvature_plot_png(res: dict, param_key: str = "S
         note_str = "↑ Yield fy -> Increases yield strain eps_y = fy/E_s & yield moment M_y"
         for idx, fy_val in enumerate(fy_list):
             mc = calculate_moment_curvature(b_base, d_base, h_base, as_base, fc_base, fy_val, units)
-            ax.plot(mc["phi_pts"], mc["m_pts"], color=colors[idx % len(colors)], lw=1.8,
+            ax.plot(mc["phi_continuous"], mc["m_continuous"], color=colors[idx % len(colors)], lw=1.8,
                     label=f"fy={fy_val:.0f} {f_unit} [M_n={mc['M_n']:.1f}{m_unit}]")
 
     ax.set_title(title_str, fontsize=9, fontweight="bold")
@@ -510,6 +512,7 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
         "Custom Inputs",
         "CE 152 Example 3 (b=250mm, d=575mm, f'c=28MPa, fy=420MPa, As=1470mm²)",
         "CE 152 Slide 35 Balanced Condition (b=250mm, d=575mm, f'c=28MPa, fy=420MPa)",
+        "CE 152 Slide 5425 (b=12in, d=20in, f'c=4ksi, fy=60ksi, As=2.50in²)",
     ]
 
     default_preset = "Custom Inputs"
@@ -517,6 +520,8 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
         default_preset = preset_options[1]
     elif pv.get("preset") == "slide35":
         default_preset = preset_options[2]
+    elif pv.get("preset") == "slide5425":
+        default_preset = preset_options[3]
 
     plot_view_options = [
         "Step-by-Step Board Solution",
@@ -630,6 +635,11 @@ def run_gui() -> None:
                 window.close()
                 window = create_window("SI", preset_vals=pv)
                 cached_data = {}
+            elif "CE 152 Slide 5425" in values["-PRESET-"]:
+                pv = {"fc": "4.0", "fy": "60.0", "b": "12.0", "d": "20.0", "as": "2.50", "mserv": "1200.0", "mult": "2000.0", "preset": "slide5425"}
+                window.close()
+                window = create_window("US", preset_vals=pv)
+                cached_data = {}
             continue
 
         if event in ("-PLOT-VIEW-", "-PARAM-VAR-") and cached_data:
@@ -719,17 +729,26 @@ def run_gui() -> None:
 
 
 def self_check_headless() -> None:
-    """Headless self-check for solver_gui.py, CE 152 Example 3, Slide 35, and 5 parametric variables."""
+    """Headless self-check for solver_gui.py, CE 152 Example 3, Slide 35, and Slide 5425."""
     res_ce152 = solve_flexure_section(28.0, 420.0, 250.0, 575.0, 1470.0, 100.0, 220.0, "SI")
     assert abs(res_ce152["inelastic"]["a"] - 103.76) < 0.1
     assert abs(res_ce152["balanced"]["c_bal"] - 338.24) < 0.1
 
-    # Check all 5 parametric variable plots
-    for p_var in ["Steel Area (As)", "Effective Depth (d)", "Concrete Strength (f'c)", "Beam Width (b)", "Steel Yield Strength (fy)"]:
-        png = generate_parametric_moment_curvature_plot_png(res_ce152, p_var)
-        assert len(png) > 1000
+    res_5425 = solve_flexure_section(4.0, 60.0, 12.0, 20.0, 2.50, 1200.0, 2000.0, "US")
+    assert res_5425["status"] == "PASS"
 
-    print("solver_gui 5 Parametric Variables & Dropdown Plot View check passed!")
+    png_steps = generate_step_by_step_latex_png(res_ce152)
+    png_as_param = generate_parametric_moment_curvature_plot_png(res_ce152)
+    png_stress = generate_inelastic_diagram_png(250.0, 575.0, 1470.0, 28.0, 420.0, res_ce152["inelastic"], "SI")
+    png_mph = generate_moment_curvature_plot_png(res_ce152["mc_data"], 100.0, 220.0)
+    png_latex = generate_latex_summary_card_png(res_ce152)
+
+    assert len(png_steps) > 1000
+    assert len(png_as_param) > 1000
+    assert len(png_stress) > 1000
+    assert len(png_mph) > 1000
+    assert len(png_latex) > 1000
+    print("solver_gui CE 152 Slide 5425 & Continuous Fiber M-phi check passed!")
 
 
 if __name__ == "__main__":

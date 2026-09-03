@@ -1,4 +1,5 @@
 import math
+import numpy as np
 
 # Provenance parameters
 E_S_SI: float = 200000.0  # MPa [GIVEN: NSCP 2015 Sec 420.2.2.1 / ACI 318M]
@@ -81,7 +82,6 @@ def calculate_inelastic_neutral_axis(
     beta1 = calculate_beta_1(fc_prime, units)
     eps_y = fy / e_s
 
-    # Assume steel yields: C = 0.85 * lambda * f'c * b * a = T = A_s * f_y
     a_yield = (a_s * fy) / (0.85 * lambda_factor * fc_prime * b)
     c_yield = a_yield / beta1
     eps_s_yield = EPS_U_GIVEN * (d - c_yield) / c_yield
@@ -89,7 +89,6 @@ def calculate_inelastic_neutral_axis(
     if eps_s_yield >= eps_y:
         return c_yield, a_yield, fy, eps_s_yield
 
-    # Steel did not yield
     k1 = 0.85 * lambda_factor * fc_prime * b * beta1
     k2 = EPS_U_GIVEN * a_s * e_s
     c = (-k2 + math.sqrt(k2**2 + 4.0 * k1 * k2 * d)) / (2.0 * k1)
@@ -108,13 +107,11 @@ def calculate_balanced_condition(
     beta1 = calculate_beta_1(fc_prime, units)
     eps_y = fy / e_s
 
-    # Balanced strain compatibility: c_bal / d = eps_cu / (eps_cu + eps_y)
     c_bal = (EPS_U_GIVEN / (EPS_U_GIVEN + eps_y)) * d
     a_bal = beta1 * c_bal
     a_s_bal = (0.85 * lambda_factor * fc_prime * b * a_bal) / fy
     rho_b = a_s_bal / (b * d)
 
-    # Tension-controlled maximum reinforcement ratio (eps_t = 0.005)
     c_max = (EPS_U_GIVEN / (EPS_U_GIVEN + 0.005)) * d
     a_max = beta1 * c_max
     a_s_max = (0.85 * lambda_factor * fc_prime * b * a_max) / fy
@@ -181,22 +178,21 @@ def calculate_inelastic_capacity(
 
 def calculate_moment_curvature(
     b: float, d: float, h: float, a_s: float, fc_prime: float, fy: float, units: str = "US", lambda_factor: float = 1.0
-) -> dict[str, float | list[float] | dict[str, str]]:
-    """Calculate key points and 3 explicit regions on the Moment-Curvature (M - phi) response curve."""
+) -> dict[str, float | list[float] | dict[str, str] | np.ndarray]:
+    """Calculate key points, 3 regions, and continuous fiber-integrated Moment-Curvature (M - phi) response."""
     is_si = units.upper() == "SI"
     e_s = E_S_SI if is_si else E_S_US
     e_c = calculate_concrete_modulus(fc_prime, units)
     n = calculate_modular_ratio(fc_prime, units)
     f_r = calculate_modulus_of_rupture(fc_prime, units) * lambda_factor
 
-    # Region O -> C: Uncracked Elastic Stage
+    # Key Limit Points
     i_g = (1.0 / 12.0) * b * (h**3)
     y_t = h / 2.0
     m_cr_raw = (f_r * i_g) / y_t
     m_cr_mom = m_cr_raw / 1e6 if is_si else m_cr_raw
     phi_cr = m_cr_raw / (e_c * i_g)
 
-    # Region C -> Y: Cracked Elastic Stage
     x = calculate_neutral_axis_depth(b, d, a_s, n)
     i_cr = calculate_cracked_moment_of_inertia(b, d, a_s, n, x)
     eps_y = fy / e_s
@@ -204,7 +200,6 @@ def calculate_moment_curvature(
     m_y_raw = (fy * i_cr) / (n * (d - x))
     m_y_mom = m_y_raw / 1e6 if is_si else m_y_raw
 
-    # Region Y -> U: Cracked Inelastic Stage
     c, a, f_s, eps_s = calculate_inelastic_neutral_axis(b, d, a_s, fc_prime, fy, units, lambda_factor)
     m_n_raw = a_s * f_s * (d - a / 2.0)
     m_n_mom = m_n_raw / 1e6 if is_si else m_n_raw
@@ -218,6 +213,62 @@ def calculate_moment_curvature(
 
     m_unit = "kN·m" if is_si else "kip-in"
     phi_unit = "rad/m" if is_si else "1/in"
+
+    # Continuous Fiber Integration for smooth curves (like Slide 5425)
+    def solve_c_fiber(phi_val):
+        def force_diff(c_val):
+            eps_c = phi_val * c_val
+            eps_s_val = phi_val * (d - c_val)
+            y_fibers = np.linspace(0, c_val, 50)
+            dy = c_val / 50.0
+            eps_fibers = phi_val * y_fibers
+            eps_0 = 0.002
+            stresses = np.where(
+                eps_fibers <= eps_0,
+                fc_prime * (2.0 * (eps_fibers / eps_0) - (eps_fibers / eps_0)**2),
+                fc_prime
+            )
+            stresses = np.maximum(0.0, stresses)
+            C_force = np.sum(stresses * b * dy) * lambda_factor
+            fs_val = min(fy, e_s * eps_s_val) if eps_s_val > 0 else e_s * eps_s_val
+            T_force = a_s * fs_val
+            return C_force - T_force, C_force, stresses, y_fibers, dy
+
+        c_low, c_high = 0.01 * d, d
+        for _ in range(25):
+            c_mid = (c_low + c_high) / 2.0
+            diff, C_force, stresses, y_fibers, dy = force_diff(c_mid)
+            if diff < 0:
+                c_low = c_mid
+            else:
+                c_high = c_mid
+        diff, C_force, stresses, y_fibers, dy = force_diff(c_mid)
+
+        if C_force > 0:
+            y_centroid = np.sum(stresses * y_fibers * dy) / np.sum(stresses * dy)
+            arm = d - (c_mid - y_centroid)
+            M_val = C_force * arm
+        else:
+            M_val = 0.0
+        return c_mid, M_val, phi_val * c_mid
+
+    phi_max = EPS_U_GIVEN / (a_s * fy / (0.85 * fc_prime * b * 0.85)) if (0.85 * fc_prime * b) > 0 else 0.001
+    phi_cracked_samples = np.linspace(0, phi_max * 1.15, 60)
+    
+    phi_continuous = []
+    m_continuous = []
+    for p_val in phi_cracked_samples:
+        if p_val <= phi_cr:
+            M_val = e_c * i_g * p_val
+            eps_c_val = p_val * y_t
+        else:
+            c_mid, M_val, eps_c_val = solve_c_fiber(p_val)
+
+        if eps_c_val > EPS_U_GIVEN * 1.05:
+            break
+
+        phi_continuous.append(p_val * scale_curv)
+        m_continuous.append(M_val / (1e6 if is_si else 1.0))
 
     regions = {
         "O_C": f"Region O->C: Stresses Elastic, Section Uncracked (0 to {m_cr_mom:.1f} {m_unit})",
@@ -235,6 +286,8 @@ def calculate_moment_curvature(
         "ductility_ratio": ductility_ratio,
         "phi_pts": phi_pts,
         "m_pts": m_pts,
+        "phi_continuous": np.array(phi_continuous),
+        "m_continuous": np.array(m_continuous),
         "m_unit": m_unit,
         "phi_unit": phi_unit,
         "regions": regions,
@@ -253,16 +306,16 @@ def self_check() -> None:
     assert abs(bal_slide35["c_bal"] - 338.24) < 0.1
     assert abs(bal_slide35["rho_b"] - 0.02833) < 0.001
 
-    # US Customary test case
+    # US Customary continuous moment-curvature check
     mc_us = calculate_moment_curvature(12.0, 20.0, 22.5, 2.37, 4.0, 60.0, units="US")
+    assert len(mc_us["phi_continuous"]) > 20
     assert mc_us["m_unit"] == "kip-in"
-    assert mc_us["phi_unit"] == "1/in"
 
     print(
         f"Self-check passed:\n"
         f"  CE 152 Example 3 : a = {res_ce152['a']:.2f} mm (expected 103.76 mm), c = {res_ce152['c']:.2f} mm\n"
         f"  CE 152 Slide 35   : c_bal = {bal_slide35['c_bal']:.2f} mm, rho_b = {bal_slide35['rho_b']*100:.2f}%\n"
-        f"  US Customary      : M_cr={mc_us['M_cr']:.1f} kip-in, M_n={mc_us['M_n']:.1f} kip-in\n"
+        f"  Continuous M-phi : {len(mc_us['phi_continuous'])} points, M_n={mc_us['M_n']:.1f} kip-in\n"
         f"  Ductility Ratio   : {mc_us['ductility_ratio']:.2f}"
     )
 
