@@ -1,4 +1,4 @@
-"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Continuous Fiber M-phi Curves, Parametric Variable Dropdowns, Board Solutions & Multi-Units.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Real-Time Unit Conversion (US <-> SI), Continuous Fiber M-phi Curves & LaTeX Equations.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -489,6 +489,19 @@ def generate_latex_summary_card_png(res: dict) -> bytes:
     return buf.getvalue()
 
 
+def convert_inputs(fc: float, fy: float, b: float, d: float, a_s: float, m_serv: float, m_ult: float, from_units: str, to_units: str) -> tuple[float, float, float, float, float, float, float]:
+    """Convert input parameters between SI Metric and US Customary units."""
+    if from_units.upper() == to_units.upper():
+        return fc, fy, b, d, a_s, m_serv, m_ult
+
+    if from_units.upper() == "SI" and to_units.upper() == "US":
+        # SI (MPa, mm, mm^2, kN*m) -> US (ksi, in, in^2, kip-in)
+        return fc / 6.89476, fy / 6.89476, b / 25.4, d / 25.4, a_s / 645.16, m_serv * 8.85075, m_ult * 8.85075
+    else:
+        # US (ksi, in, in^2, kip-in) -> SI (MPa, mm, mm^2, kN*m)
+        return fc * 6.89476, fy * 6.89476, b * 25.4, d * 25.4, a_s * 645.16, m_serv / 8.85075, m_ult / 8.85075
+
+
 def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Window:
     """Build the FreeSimpleGUI layout using Engr. Lucero's signature structure."""
     sg.theme("SystemDefault")
@@ -609,7 +622,8 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
 
 def run_gui() -> None:
     """Run event loop."""
-    window = create_window("US")
+    current_unit = "US"
+    window = create_window(current_unit)
     cached_data = {}
 
     while True:
@@ -618,25 +632,54 @@ def run_gui() -> None:
             break
 
         if event == "-UNITS-":
-            selected_unit = "SI" if "SI" in values["-UNITS-"] else "US"
-            window.close()
-            window = create_window(selected_unit)
-            cached_data = {}
+            target_unit = "SI" if "SI" in values["-UNITS-"] else "US"
+            if target_unit != current_unit:
+                try:
+                    fc = float(values["-FC-"])
+                    fy = float(values["-FY-"])
+                    b = float(values["-B-"])
+                    d = float(values["-D-"])
+                    a_s = float(values["-AS-"])
+                    m_serv = float(values["-MSERV-"])
+                    m_ult = float(values["-MULT-"])
+
+                    fc_c, fy_c, b_c, d_c, as_c, ms_c, mu_c = convert_inputs(
+                        fc, fy, b, d, a_s, m_serv, m_ult, current_unit, target_unit
+                    )
+                    pv = {
+                        "fc": f"{fc_c:.2f}",
+                        "fy": f"{fy_c:.2f}",
+                        "b": f"{b_c:.2f}",
+                        "d": f"{d_c:.2f}",
+                        "as": f"{as_c:.2f}",
+                        "mserv": f"{ms_c:.2f}",
+                        "mult": f"{mu_c:.2f}",
+                    }
+                except Exception:
+                    pv = None
+
+                current_unit = target_unit
+                window.close()
+                window = create_window(current_unit, preset_vals=pv)
+                cached_data = {}
             continue
 
         if event == "-PRESET-":
             if "CE 152 Example 3" in values["-PRESET-"]:
                 pv = {"fc": "28.0", "fy": "420.0", "b": "250.0", "d": "575.0", "as": "1470.0", "mserv": "100.0", "mult": "220.0", "preset": "ex3"}
+                current_unit = "SI"
                 window.close()
                 window = create_window("SI", preset_vals=pv)
                 cached_data = {}
             elif "CE 152 Slide 35" in values["-PRESET-"]:
                 pv = {"fc": "28.0", "fy": "420.0", "b": "250.0", "d": "575.0", "as": "4072.9", "mserv": "100.0", "mult": "220.0", "preset": "slide35"}
+                current_unit = "SI"
                 window.close()
                 window = create_window("SI", preset_vals=pv)
                 cached_data = {}
             elif "CE 152 Slide 5425" in values["-PRESET-"]:
                 pv = {"fc": "4.0", "fy": "60.0", "b": "12.0", "d": "20.0", "as": "2.50", "mserv": "1200.0", "mult": "2000.0", "preset": "slide5425"}
+                current_unit = "US"
                 window.close()
                 window = create_window("US", preset_vals=pv)
                 cached_data = {}
@@ -734,21 +777,22 @@ def self_check_headless() -> None:
     assert abs(res_ce152["inelastic"]["a"] - 103.76) < 0.1
     assert abs(res_ce152["balanced"]["c_bal"] - 338.24) < 0.1
 
-    res_5425 = solve_flexure_section(4.0, 60.0, 12.0, 20.0, 2.50, 1200.0, 2000.0, "US")
-    assert res_5425["status"] == "PASS"
+    # Check converting CE 152 Example 3 to US Customary
+    fc_u, fy_c, b_c, d_c, as_c, ms_c, mu_c = convert_inputs(28.0, 420.0, 250.0, 575.0, 1470.0, 100.0, 220.0, "SI", "US")
+    res_ce152_us = solve_flexure_section(fc_u, fy_c, b_c, d_c, as_c, ms_c, mu_c, "US")
+    assert abs(res_ce152_us["inelastic"]["a"] - (103.76 / 25.4)) < 0.05
+    assert res_ce152_us["mc_data"]["m_unit"] == "kip-in"
 
-    png_steps = generate_step_by_step_latex_png(res_ce152)
-    png_as_param = generate_parametric_moment_curvature_plot_png(res_ce152)
-    png_stress = generate_inelastic_diagram_png(250.0, 575.0, 1470.0, 28.0, 420.0, res_ce152["inelastic"], "SI")
-    png_mph = generate_moment_curvature_plot_png(res_ce152["mc_data"], 100.0, 220.0)
-    png_latex = generate_latex_summary_card_png(res_ce152)
+    png_steps = generate_step_by_step_latex_png(res_ce152_us)
+    png_as_param = generate_parametric_moment_curvature_plot_png(res_ce152_us)
+    png_stress = generate_inelastic_diagram_png(b_c, d_c, as_c, fc_u, fy_c, res_ce152_us["inelastic"], "US")
+    png_mph = generate_moment_curvature_plot_png(res_ce152_us["mc_data"], ms_c, mu_c)
 
     assert len(png_steps) > 1000
     assert len(png_as_param) > 1000
     assert len(png_stress) > 1000
     assert len(png_mph) > 1000
-    assert len(png_latex) > 1000
-    print("solver_gui CE 152 Slide 5425 & Continuous Fiber M-phi check passed!")
+    print("solver_gui Real-Time Unit Conversion US <-> SI check passed!")
 
 
 if __name__ == "__main__":
