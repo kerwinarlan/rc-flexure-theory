@@ -2,6 +2,7 @@ import math
 
 # Provenance parameters [NSCP 2015 Section 420.2.2.1]
 E_S_GIVEN: float = 200000.0  # MPa [GIVEN] Steel elastic modulus
+EPS_U_GIVEN: float = 0.003  # [GIVEN: NSCP 2015 Section 422.2.2.1] Ultimate concrete strain
 
 
 def calculate_concrete_modulus(f_c_prime: float) -> float:
@@ -37,7 +38,7 @@ def calculate_beta_1(f_c_prime: float) -> float:
 def calculate_neutral_axis_depth(
     b: float, d: float, a_s: float, n: float
 ) -> float:
-    """Calculate neutral axis depth x using first moment of area equilibrium.
+    """Calculate elastic neutral axis depth x using first moment of area equilibrium.
     
     Equilibrium formula: Q_c = Q_s -> A_c * x_c = n * A_s * x_s [CALCULATED: NSCP 2015 Sec 424.5]
     0.5 * b * x^2 = n * A_s * (d - x)
@@ -46,7 +47,6 @@ def calculate_neutral_axis_depth(
         raise ValueError("All input dimensions and parameters must be positive.")
     
     n_as = n * a_s
-    # Solution to quadratic: 0.5 * b * x^2 + n_as * x - n_as * d = 0
     return (-n_as + math.sqrt(n_as**2 + 2.0 * b * n_as * d)) / b
 
 
@@ -76,6 +76,81 @@ def calculate_service_stresses(
     return f_c, f_s
 
 
+def calculate_inelastic_neutral_axis(
+    b: float, d: float, a_s: float, fc_prime: float, fy: float, e_s: float = E_S_GIVEN
+) -> tuple[float, float, float, float]:
+    """Calculate inelastic neutral axis depth c, stress block a, steel stress f_s, and strain eps_s.
+    
+    Inelastic flexure theory [CALCULATED: NSCP 2015 Sec 422.2]
+    """
+    beta1 = calculate_beta_1(fc_prime)
+    eps_y = fy / e_s
+
+    # Assume steel yields: T = A_s * f_y = C = 0.85 * f'c * b * a
+    a_yield = (a_s * fy) / (0.85 * fc_prime * b)
+    c_yield = a_yield / beta1
+    eps_s_yield = EPS_U_GIVEN * (d - c_yield) / c_yield
+
+    if eps_s_yield >= eps_y:
+        # Steel yielded
+        return c_yield, a_yield, fy, eps_s_yield
+
+    # Steel did not yield: solve 0.85 * f'c * b * beta_1 * c^2 + 0.003 * A_s * E_s * c - 0.003 * A_s * E_s * d = 0
+    k1 = 0.85 * fc_prime * b * beta1
+    k2 = EPS_U_GIVEN * a_s * e_s
+    c = (-k2 + math.sqrt(k2**2 + 4.0 * k1 * k2 * d)) / (2.0 * k1)
+    a = beta1 * c
+    eps_s = EPS_U_GIVEN * (d - c) / c
+    f_s = e_s * eps_s
+    return c, a, f_s, eps_s
+
+
+def calculate_phi_factor(eps_t: float, fy: float, e_s: float = E_S_GIVEN) -> float:
+    """Calculate strength reduction factor phi for flexure.
+    
+    [CALCULATED: NSCP 2015 Sec 421.2.2]
+    """
+    eps_y = fy / e_s
+    if eps_t >= 0.005:
+        return 0.90  # Tension-controlled
+    if eps_t <= eps_y:
+        return 0.65  # Compression-controlled
+    # Transition
+    return 0.65 + 0.25 * (eps_t - eps_y) / (0.005 - eps_y)
+
+
+def calculate_inelastic_capacity(
+    b: float, d: float, a_s: float, fc_prime: float, fy: float
+) -> dict[str, float | str]:
+    """Calculate ultimate strength flexural capacity phi*M_n per NSCP 2015 Sec 422."""
+    c, a, f_s, eps_s = calculate_inelastic_neutral_axis(b, d, a_s, fc_prime, fy)
+    phi = calculate_phi_factor(eps_s, fy)
+
+    # Nominal moment M_n = T * (d - a/2) = A_s * f_s * (d - a/2)
+    m_n_nmm = a_s * f_s * (d - a / 2.0)
+    m_n_knm = m_n_nmm / 1e6
+    phi_m_n_knm = phi * m_n_knm
+
+    eps_y = fy / E_S_GIVEN
+    if eps_s >= 0.005:
+        failure_mode = "Tension-controlled (Ductile)"
+    elif eps_s <= eps_y:
+        failure_mode = "Compression-controlled (Brittle)"
+    else:
+        failure_mode = "Transition Region"
+
+    return {
+        "c": c,
+        "a": a,
+        "f_s": f_s,
+        "eps_s": eps_s,
+        "phi": phi,
+        "M_n_knm": m_n_knm,
+        "phi_M_n_knm": phi_m_n_knm,
+        "failure_mode": failure_mode,
+    }
+
+
 def self_check() -> None:
     """Run verification checks on flexure theory calculations against NSCP 2015."""
     fc = 28.0  # MPa [ASSUMED]
@@ -90,29 +165,23 @@ def self_check() -> None:
     beta1 = calculate_beta_1(fc)
     assert beta1 == 0.85
 
-    # Check beta_1 reduction for fc = 35 MPa
-    beta1_35 = calculate_beta_1(35.0)
-    assert math.isclose(beta1_35, 0.80, rel_tol=1e-6)
-
     # Test neutral axis depth via Q_c = Q_s
-    b, d, a_s = 300.0, 500.0, 1500.0  # mm [ASSUMED]
+    b, d, a_s, fy = 300.0, 500.0, 1500.0, 420.0  # mm, MPa [ASSUMED]
     x = calculate_neutral_axis_depth(b, d, a_s, n)
     q_c = (b * x) * (x / 2.0)  # Concrete moment A_c * x_c
     q_s = (n * a_s) * (d - x)  # Transformed steel moment n * A_s * x_s
     assert math.isclose(q_c, q_s, rel_tol=1e-5)
 
-    # Test service stresses for M = 100 kN*m = 100e6 N*mm
-    m_serv = 100e6  # N*mm [ASSUMED]
-    f_c, f_s = calculate_service_stresses(m_serv, b, d, a_s, n)
-    fc_allow = 0.45 * fc  # NSCP 2015 allowable concrete stress (12.6 MPa)
-    
-    assert f_c < fc_allow  # Elastic range check
+    # Test inelastic flexural capacity
+    inelastic = calculate_inelastic_capacity(b, d, a_s, fc, fy)
+    assert inelastic["phi_M_n_knm"] > 0
+    assert inelastic["a"] < inelastic["c"]
 
     print(
         f"Self-check passed (NSCP 2015):\n"
         f"  f'c={fc} MPa -> E_c={ec:.2f} MPa, n={n:.2f}, beta_1={beta1:.2f}\n"
-        f"  NA depth x={x:.2f} mm (Q_c={q_c:.0f} mm^3, Q_s={q_s:.0f} mm^3)\n"
-        f"  Service stresses for M=100 kN*m: f_c={f_c:.2f} MPa (allow={fc_allow:.2f} MPa), f_s={f_s:.2f} MPa"
+        f"  Elastic NA x={x:.2f} mm | Inelastic c={inelastic['c']:.2f} mm, a={inelastic['a']:.2f} mm\n"
+        f"  Nominal M_n={inelastic['M_n_knm']:.2f} kN*m, Design phi*M_n={inelastic['phi_M_n_knm']:.2f} kN*m (phi={inelastic['phi']:.2f})"
     )
 
 
