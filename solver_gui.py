@@ -1,4 +1,4 @@
-"""NSCP 2015 RC Flexure Solver GUI with 3-Region Inelastic Diagrams & Moment-Curvature Plot.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with LaTeX Equations & US/SI Unit Support.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -23,26 +23,35 @@ from flexure import (
 
 
 def solve_flexure_section(
-    fc_prime: float, fy: float, b: float, d: float, as_area: float, m_serv_knm: float, m_ult_knm: float
+    fc_prime: float,
+    fy: float,
+    b: float,
+    d: float,
+    as_area: float,
+    m_serv: float,
+    m_ult: float,
+    units: str = "US",
 ) -> dict[str, float | str | dict]:
-    """Calculate elastic (WSD), inelastic (USD), and moment-curvature parameters per NSCP 2015."""
-    if fc_prime <= 0 or fy <= 0 or b <= 0 or d <= 0 or as_area <= 0 or m_serv_knm < 0 or m_ult_knm < 0:
+    """Calculate elastic (WSD), inelastic (USD), and moment-curvature parameters per ACI 318 / NSCP 2015."""
+    if fc_prime <= 0 or fy <= 0 or b <= 0 or d <= 0 or as_area <= 0 or m_serv < 0 or m_ult < 0:
         raise ValueError("Input parameters must be positive numbers.")
 
-    h = d + 65.0  # Estimated total depth
+    is_si = units.upper() == "SI"
+    h = d + (65.0 if is_si else 2.5)  # Estimated total depth
 
     # Elastic WSD calculations
-    ec = calculate_concrete_modulus(fc_prime)
-    n = calculate_modular_ratio(fc_prime)
-    beta1 = calculate_beta_1(fc_prime)
+    ec = calculate_concrete_modulus(fc_prime, units)
+    n = calculate_modular_ratio(fc_prime, units)
+    beta1 = calculate_beta_1(fc_prime, units)
     x = calculate_neutral_axis_depth(b, d, as_area, n)
 
     q_c = (b * x) * (x / 2.0)
     q_s = (n * as_area) * (d - x)
     i_cr = calculate_cracked_moment_of_inertia(b, d, as_area, n, x)
 
-    m_serv_nmm = m_serv_knm * 1e6
-    fc, fs = calculate_service_stresses(m_serv_nmm, b, d, as_area, n)
+    # Conversion for service moment if needed
+    m_serv_raw = m_serv * (1e6 if is_si else 1.0)  # N*mm or in-lb/in-kip
+    fc, fs = calculate_service_stresses(m_serv_raw, b, d, as_area, n)
     fc_allow = 0.45 * fc_prime
     fs_allow = 0.50 * fy
 
@@ -50,11 +59,11 @@ def solve_flexure_section(
     util_s = fs / fs_allow if fs_allow > 0 else 0.0
 
     # Inelastic USD calculations
-    inelastic = calculate_inelastic_capacity(b, d, as_area, fc_prime, fy)
-    util_ult = m_ult_knm / inelastic["phi_M_n_knm"] if inelastic["phi_M_n_knm"] > 0 else 0.0
+    inelastic = calculate_inelastic_capacity(b, d, as_area, fc_prime, fy, units)
+    util_ult = m_ult / inelastic["phi_M_n"] if inelastic["phi_M_n"] > 0 else 0.0
 
     # Moment-Curvature Curve with 3 explicit regions
-    mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy)
+    mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy, units)
 
     status = (
         "PASS"
@@ -63,6 +72,14 @@ def solve_flexure_section(
     )
 
     return {
+        "fc": fc_prime,
+        "fy": fy,
+        "b": b,
+        "d": d,
+        "as_area": as_area,
+        "m_serv": m_serv,
+        "m_ult": m_ult,
+        "units": units,
         "E_c": ec,
         "n": n,
         "beta_1": beta1,
@@ -84,31 +101,35 @@ def solve_flexure_section(
 
 
 def generate_inelastic_diagram_png(
-    b: float, d: float, as_area: float, fc_prime: float, fy: float, inelastic: dict
+    b: float, d: float, as_area: float, fc_prime: float, fy: float, inelastic: dict, units: str = "US"
 ) -> bytes:
     """Generate a 3-panel matplotlib diagram of the cracked section with inelastic stresses."""
     c = float(inelastic["c"])
     a = float(inelastic["a"])
     eps_s = float(inelastic["eps_s"])
     f_s = float(inelastic["f_s"])
-    h = d + 65.0
+    is_si = units.upper() == "SI"
+    h = d + (65.0 if is_si else 2.5)
+
+    f_unit = "MPa" if is_si else "ksi"
+    l_unit = "mm" if is_si else "in"
 
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(6.8, 3.2), dpi=100)
     fig.patch.set_facecolor("#FAFAFA")
 
     # Panel 1: Cross Section Geometry
-    ax1.set_title("Beam Section", fontsize=9, fontweight="bold")
+    ax1.set_title(f"Beam Section ({l_unit})", fontsize=9, fontweight="bold")
     ax1.plot([0, b, b, 0, 0], [0, 0, -h, -h, 0], "k-", lw=1.5)
-    ax1.fill_between([0, b], 0, -a, color="#FFCC80", alpha=0.7, label=f"a={a:.1f}mm")
-    ax1.axhline(-c, color="red", linestyle="--", lw=1.2, label=f"c={c:.1f}mm")
+    ax1.fill_between([0, b], 0, -a, color="#FFCC80", alpha=0.7, label=f"a={a:.2f}{l_unit}")
+    ax1.axhline(-c, color="red", linestyle="--", lw=1.2, label=f"c={c:.2f}{l_unit}")
     n_bars = 3
     xs = [b * (i + 1) / (n_bars + 1) for i in range(n_bars)]
     ax1.scatter(xs, [-d] * n_bars, color="black", s=50, zorder=5)
     ax1.set_xlim(-b * 0.2, b * 1.2)
-    ax1.set_ylim(-h - 10, 10)
+    ax1.set_ylim(-h - 10 if is_si else -h - 0.5, 10 if is_si else 0.5)
     ax1.set_aspect("equal")
     ax1.axis("off")
-    ax1.legend(loc="lower right", fontsize=7, framealpha=0.8)
+    ax1.legend(loc="lower right", fontsize=6.5, framealpha=0.8)
 
     # Panel 2: Inelastic Strain Profile
     ax2.set_title("Inelastic Strain (ε)", fontsize=9, fontweight="bold")
@@ -117,13 +138,13 @@ def generate_inelastic_diagram_png(
     ax2.plot([-0.003, eps_s], [0, -d], "b-o", lw=1.8, ms=4)
     ax2.fill_betweenx([0, -c], 0, [-0.003, 0], color="blue", alpha=0.15)
     ax2.fill_betweenx([-c, -d], 0, [0, eps_s], color="red", alpha=0.15)
-    ax2.text(-0.003, 5, "εu=0.003", fontsize=7, color="blue", ha="center")
-    ax2.text(eps_s, -d - 15, f"εs={eps_s:.4f}", fontsize=7, color="red", ha="center")
-    ax2.set_ylim(-h - 10, 10)
+    ax2.text(-0.003, 5 if is_si else 0.2, "εu=0.003", fontsize=7, color="blue", ha="center")
+    ax2.text(eps_s, -d - (15 if is_si else 0.8), f"εs={eps_s:.5f}", fontsize=7, color="red", ha="center")
+    ax2.set_ylim(-h - 10 if is_si else -h - 0.5, 10 if is_si else 0.5)
     ax2.axis("off")
 
     # Panel 3: Inelastic Stress Profile & Forces
-    ax3.set_title("Inelastic Stress & Forces", fontsize=9, fontweight="bold")
+    ax3.set_title(f"Inelastic Stress ({f_unit})", fontsize=9, fontweight="bold")
     ax3.axhline(-c, color="red", linestyle="--", lw=1.0)
     stress_mag = 0.85 * fc_prime
     ax3.plot([0, -stress_mag, -stress_mag, 0], [0, 0, -a, -a], "orange", lw=1.5)
@@ -133,7 +154,7 @@ def generate_inelastic_diagram_png(
         xy=(-stress_mag / 2, -a / 2),
         xytext=(-stress_mag * 1.1, -a / 2),
         arrowprops=dict(arrowstyle="->", color="darkorange", lw=1.2),
-        fontsize=7,
+        fontsize=6.5,
         fontweight="bold",
         color="darkorange",
         ha="right",
@@ -143,12 +164,12 @@ def generate_inelastic_diagram_png(
         xy=(0, -d),
         xytext=(stress_mag * 0.7, -d),
         arrowprops=dict(arrowstyle="->", color="red", lw=1.2),
-        fontsize=7,
+        fontsize=6.5,
         fontweight="bold",
         color="red",
         ha="left",
     )
-    ax3.set_ylim(-h - 10, 10)
+    ax3.set_ylim(-h - 10 if is_si else -h - 0.5, 10 if is_si else 0.5)
     ax3.axis("off")
 
     plt.tight_layout()
@@ -160,25 +181,24 @@ def generate_inelastic_diagram_png(
 
 
 def generate_moment_curvature_plot_png(
-    mc_data: dict, m_serv_knm: float, m_ult_knm: float
+    mc_data: dict, m_serv: float, m_ult: float
 ) -> bytes:
     """Generate a matplotlib plot highlighting the 3 flexural behavior regions on the M - phi curve."""
     phi_pts = mc_data["phi_pts"]
     m_pts = mc_data["m_pts"]
-    m_cr = mc_data["M_cr_knm"]
-    m_y = mc_data["M_y_knm"]
-    m_n = mc_data["M_n_knm"]
+    m_cr = mc_data["M_cr"]
+    m_y = mc_data["M_y"]
+    m_n = mc_data["M_n"]
     mu_phi = mc_data["ductility_ratio"]
+    m_unit = mc_data["m_unit"]
+    phi_unit = mc_data["phi_unit"]
 
     fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=100)
     fig.patch.set_facecolor("#FAFAFA")
 
     # Shaded Behavior Regions
-    # Region 1: O -> C (Elastic Uncracked)
     ax.axvspan(0, phi_pts[1], color="#C8E6C9", alpha=0.4, label="O->C: Elastic & Uncracked")
-    # Region 2: C -> Y (Elastic Cracked)
     ax.axvspan(phi_pts[1], phi_pts[2], color="#FFF9C4", alpha=0.5, label="C->Y: Elastic & Cracked")
-    # Region 3: Y -> U (Inelastic Cracked)
     ax.axvspan(phi_pts[2], phi_pts[3], color="#FFCDD2", alpha=0.4, label="Y->U: Inelastic & Cracked")
 
     # Backbone plot
@@ -186,24 +206,24 @@ def generate_moment_curvature_plot_png(
 
     # Key Point Markers
     ax.scatter([phi_pts[0]], [0], color="black", s=30, zorder=5)
-    ax.text(phi_pts[0], 5, "O", fontsize=8, fontweight="bold", ha="center")
+    ax.text(phi_pts[0], m_n * 0.02, "O", fontsize=8, fontweight="bold", ha="center")
 
     ax.scatter([phi_pts[1]], [m_cr], color="green", s=50, zorder=5)
-    ax.text(phi_pts[1], m_cr + 10, f"C (Mcr={m_cr:.1f})", fontsize=7, fontweight="bold", color="green", ha="center")
+    ax.text(phi_pts[1], m_cr + m_n * 0.04, f"C ({m_cr:.1f})", fontsize=7, fontweight="bold", color="green", ha="center")
 
     ax.scatter([phi_pts[2]], [m_y], color="darkorange", s=50, zorder=5)
-    ax.text(phi_pts[2], m_y + 10, f"Y (My={m_y:.1f})", fontsize=7, fontweight="bold", color="darkorange", ha="right")
+    ax.text(phi_pts[2], m_y + m_n * 0.04, f"Y ({m_y:.1f})", fontsize=7, fontweight="bold", color="darkorange", ha="right")
 
     ax.scatter([phi_pts[3]], [m_n], color="red", s=50, zorder=5)
-    ax.text(phi_pts[3], m_n + 10, f"U (Mn={m_n:.1f})", fontsize=7, fontweight="bold", color="red", ha="right")
+    ax.text(phi_pts[3], m_n + m_n * 0.04, f"U ({m_n:.1f})", fontsize=7, fontweight="bold", color="red", ha="right")
 
     # Demand levels
-    ax.axhline(m_serv_knm, color="gray", linestyle=":", lw=1.2, label=f"M_service={m_serv_knm:.1f}kN·m")
-    ax.axhline(m_ult_knm, color="purple", linestyle="--", lw=1.2, label=f"M_factored={m_ult_knm:.1f}kN·m")
+    ax.axhline(m_serv, color="gray", linestyle=":", lw=1.2, label=f"M_service={m_serv:.1f}{m_unit}")
+    ax.axhline(m_ult, color="purple", linestyle="--", lw=1.2, label=f"M_factored={m_ult:.1f}{m_unit}")
 
-    ax.set_title(f"3-Region Moment - Curvature (µ_ϕ = {mu_phi:.2f})", fontsize=9, fontweight="bold")
-    ax.set_xlabel("Curvature ϕ (rad/m)", fontsize=8)
-    ax.set_ylabel("Flexural Moment M (kN·m)", fontsize=8)
+    ax.set_title(f"3-Region Moment - Curvature (Curvature Ductility µ_ϕ = {mu_phi:.2f})", fontsize=9, fontweight="bold")
+    ax.set_xlabel(f"Curvature ϕ ({phi_unit})", fontsize=8)
+    ax.set_ylabel(f"Flexural Moment M ({m_unit})", fontsize=8)
     ax.grid(True, linestyle="--", alpha=0.5)
     ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
 
@@ -215,43 +235,109 @@ def generate_moment_curvature_plot_png(
     return buf.getvalue()
 
 
-def create_window() -> sg.Window:
+def generate_latex_summary_card_png(res: dict) -> bytes:
+    """Generate a step-by-step LaTeX formula summary card rendering publication-quality math."""
+    units = res["units"]
+    is_si = units.upper() == "SI"
+    fc = res["fc"]
+    fy = res["fy"]
+    ec = res["E_c"]
+    n = res["n"]
+    x = res["x"]
+    icr = res["I_cr"]
+    inel = res["inelastic"]
+    mc = res["mc_data"]
+
+    m_unit = "kN·m" if is_si else "kip-in"
+    f_unit = "MPa" if is_si else "ksi"
+    l_unit = "mm" if is_si else "in"
+    c_unit = "rad/m" if is_si else "1/in"
+
+    fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=100)
+    fig.patch.set_facecolor("#FAFAFA")
+    ax.axis("off")
+
+    lines = [
+        r"$\mathbf{NSCP\ 2015\ /\ ACI\ 318\ LaTeX\ Flexural\ Equations}$",
+        r"$E_c = %s \rightarrow E_c = %.2f\ \text{%s}, \quad n = \frac{E_s}{E_c} = %.2f$" %
+            ("4700\\sqrt{f'_c}" if is_si else "57\\sqrt{f'_c\\cdot 1000}", ec, f_unit, n),
+        r"$Q_c = Q_s \rightarrow \frac{1}{2} b x^2 = n A_s (d - x) \rightarrow x = %.2f\ \text{%s}$" % (x, l_unit),
+        r"$I_{cr} = \frac{1}{3} b x^3 + n A_s (d - x)^2 = %.3e\ \text{%s}^4$" % (icr, l_unit),
+        r"$a = \frac{A_s f_y}{0.85 f'_c b} = %.2f\ \text{%s}, \quad c = \frac{a}{\beta_1} = %.2f\ \text{%s}$" % (inel["a"], l_unit, inel["c"], l_unit),
+        r"$M_n = A_s f_s \left(d - \frac{a}{2}\right) = %.2f\ \text{%s}, \quad \phi M_n = %.2f\ \text{%s}$" % (inel["M_n"], m_unit, inel["phi_M_n"], m_unit),
+        r"$\phi_y = \frac{\epsilon_y}{d - x} = %.6f\ \text{%s}, \quad \phi_u = \frac{\epsilon_u}{c} = %.6f\ \text{%s}$" % (mc["phi_y"], c_unit, mc["phi_u"], c_unit),
+        r"$\mu_\phi = \frac{\phi_u}{\phi_y} = %.2f \quad \text{[%s]}$" % (mc["ductility_ratio"], inel["failure_mode"]),
+    ]
+
+    y_pos = 0.92
+    for line in lines:
+        ax.text(0.03, y_pos, line, fontsize=8.2, color="#1A237E")
+        y_pos -= 0.12
+
+    plt.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def create_window(units: str = "US") -> sg.Window:
     """Build the FreeSimpleGUI layout using Engr. Lucero's signature structure."""
     sg.theme("SystemDefault")
+    is_si = units.upper() == "SI"
+
+    # Default values per unit system
+    def_fc = "28.0" if is_si else "4.0"
+    def_fy = "420.0" if is_si else "60.0"
+    def_b = "300.0" if is_si else "12.0"
+    def_d = "500.0" if is_si else "20.0"
+    def_as = "1500.0" if is_si else "2.37"
+    def_mserv = "100.0" if is_si else "1200.0"
+    def_mult = "220.0" if is_si else "2000.0"
+
+    f_unit = "MPa" if is_si else "ksi"
+    l_unit = "mm" if is_si else "in"
+    a_unit = "mm²" if is_si else "in²"
+    m_unit = "kN·m" if is_si else "kip-in"
 
     layout = [
-        [sg.Text("NSCP 2015 Reinforced Concrete Flexure Solver", font=("Helvetica", 12, "bold"))],
-        [sg.Text("Elastic & Inelastic Flexure across 3 Behavior Regions (O->C, C->Y, Y->U)", font=("Helvetica", 9, "italic"))],
+        [sg.Text("NSCP 2015 / ACI 318 RC Flexure Solver (LaTeX & Multi-Units)", font=("Helvetica", 12, "bold"))],
+        [
+            sg.Text("Unit System:", font=("Helvetica", 9, "bold")),
+            sg.Combo(["US Customary (kip-in, 1/in, ksi, in)", "SI Metric (kN·m, rad/m, MPa, mm)"],
+                     default_value="US Customary (kip-in, 1/in, ksi, in)" if not is_si else "SI Metric (kN·m, rad/m, MPa, mm)",
+                     key="-UNITS-", enable_events=True, readonly=True),
+        ],
         [sg.HorizontalSeparator()],
         # Input Section
         [
             sg.Text("Concrete f'c =", size=(14, 1)),
-            sg.Input("28.0", key="-FC-", size=(8, 1)),
-            sg.Text("MPa", size=(4, 1)),
+            sg.Input(def_fc, key="-FC-", size=(8, 1)),
+            sg.Text(f_unit, key="-U-FC-", size=(6, 1)),
             sg.Text("Steel fy =", size=(10, 1)),
-            sg.Input("420.0", key="-FY-", size=(8, 1)),
-            sg.Text("MPa", size=(4, 1)),
+            sg.Input(def_fy, key="-FY-", size=(8, 1)),
+            sg.Text(f_unit, key="-U-FY-", size=(6, 1)),
         ],
         [
             sg.Text("Beam width b =", size=(14, 1)),
-            sg.Input("300.0", key="-B-", size=(8, 1)),
-            sg.Text("mm", size=(4, 1)),
+            sg.Input(def_b, key="-B-", size=(8, 1)),
+            sg.Text(l_unit, key="-U-B-", size=(6, 1)),
             sg.Text("Depth d =", size=(10, 1)),
-            sg.Input("500.0", key="-D-", size=(8, 1)),
-            sg.Text("mm", size=(4, 1)),
+            sg.Input(def_d, key="-D-", size=(8, 1)),
+            sg.Text(l_unit, key="-U-D-", size=(6, 1)),
         ],
         [
             sg.Text("Steel area As =", size=(14, 1)),
-            sg.Input("1500.0", key="-AS-", size=(8, 1)),
-            sg.Text("mm²", size=(4, 1)),
+            sg.Input(def_as, key="-AS-", size=(8, 1)),
+            sg.Text(a_unit, key="-U-AS-", size=(6, 1)),
             sg.Text("Service M =", size=(10, 1)),
-            sg.Input("100.0", key="-MSERV-", size=(8, 1)),
-            sg.Text("kN·m", size=(4, 1)),
+            sg.Input(def_mserv, key="-MSERV-", size=(8, 1)),
+            sg.Text(m_unit, key="-U-MSERV-", size=(6, 1)),
         ],
         [
             sg.Text("Factored Mu =", size=(14, 1)),
-            sg.Input("220.0", key="-MULT-", size=(8, 1)),
-            sg.Text("kN·m", size=(4, 1)),
+            sg.Input(def_mult, key="-MULT-", size=(8, 1)),
+            sg.Text(m_unit, key="-U-MULT-", size=(6, 1)),
         ],
         [sg.Button("Calculate & Plot", button_color=("white", "navy")), sg.Button("Exit")],
         [sg.HorizontalSeparator()],
@@ -259,7 +345,7 @@ def create_window() -> sg.Window:
         [
             sg.Column(
                 [
-                    [sg.Text("Analysis Results (NSCP 2015)", font=("Helvetica", 10, "bold"))],
+                    [sg.Text("Analysis Results", font=("Helvetica", 10, "bold"))],
                     [sg.Multiline("", key="-OUTPUT-", size=(44, 16), disabled=True, font=("Courier", 9))],
                 ]
             ),
@@ -267,8 +353,12 @@ def create_window() -> sg.Window:
                 [
                     [
                         sg.Tab(
-                            "Moment - Curvature (3 Regions)",
+                            "Moment - Curvature (M - ϕ)",
                             [[sg.Image(key="-IMAGE-MPH-", size=(460, 270))]],
+                        ),
+                        sg.Tab(
+                            "LaTeX Math Derivation",
+                            [[sg.Image(key="-IMAGE-LATEX-", size=(460, 270))]],
                         ),
                         sg.Tab(
                             "Inelastic Stress Diagram",
@@ -280,20 +370,28 @@ def create_window() -> sg.Window:
         ],
     ]
 
-    return sg.Window("NSCP 2015 RC Flexure Solver", layout, finalize=True)
+    return sg.Window("NSCP 2015 / ACI 318 RC Flexure Solver", layout, finalize=True)
 
 
 def run_gui() -> None:
     """Run event loop."""
-    window = create_window()
+    window = create_window("US")
 
     while True:
         event, values = window.read()
         if event in (sg.WIN_CLOSED, "Exit"):
             break
 
+        if event == "-UNITS-":
+            # Switch unit system defaults
+            selected_unit = "SI" if "SI" in values["-UNITS-"] else "US"
+            window.close()
+            window = create_window(selected_unit)
+            continue
+
         if event == "Calculate & Plot":
             try:
+                selected_unit = "SI" if "SI" in values["-UNITS-"] else "US"
                 fc = float(values["-FC-"])
                 fy = float(values["-FY-"])
                 b = float(values["-B-"])
@@ -302,48 +400,53 @@ def run_gui() -> None:
                 m_serv = float(values["-MSERV-"])
                 m_ult = float(values["-MULT-"])
 
-                res = solve_flexure_section(fc, fy, b, d, a_s, m_serv, m_ult)
+                res = solve_flexure_section(fc, fy, b, d, a_s, m_serv, m_ult, selected_unit)
                 inel = res["inelastic"]
                 mc = res["mc_data"]
+                m_unit = mc["m_unit"]
+                f_unit = "MPa" if selected_unit == "SI" else "ksi"
+                l_unit = "mm" if selected_unit == "SI" else "in"
 
-                # Determine current region for service & factored loads
                 def get_region(m_val):
-                    if m_val <= mc["M_cr_knm"]:
+                    if m_val <= mc["M_cr"]:
                         return "Region O->C (Elastic Uncracked)"
-                    elif m_val <= mc["M_y_knm"]:
+                    elif m_val <= mc["M_y"]:
                         return "Region C->Y (Elastic Cracked)"
                     else:
                         return "Region Y->U (Inelastic Cracked)"
 
                 out_text = (
                     f"--- BEHAVIOR REGIONS BREAKDOWN ---\n"
-                    f"O->C Elastic Uncracked: 0 <= M <= {mc['M_cr_knm']:.2f} kN·m\n"
-                    f"C->Y Elastic Cracked  : {mc['M_cr_knm']:.2f} < M <= {mc['M_y_knm']:.2f} kN·m\n"
-                    f"Y->U Inelastic Cracked: {mc['M_y_knm']:.2f} < M <= {mc['M_n_knm']:.2f} kN·m\n\n"
+                    f"O->C Elastic Uncracked: 0 <= M <= {mc['M_cr']:.1f} {m_unit}\n"
+                    f"C->Y Elastic Cracked  : {mc['M_cr']:.1f} < M <= {mc['M_y']:.1f} {m_unit}\n"
+                    f"Y->U Inelastic Cracked: {mc['M_y']:.1f} < M <= {mc['M_n']:.1f} {m_unit}\n\n"
                     f"Service M State       : {get_region(m_serv)}\n"
                     f"Factored Mu State      : {get_region(m_ult)}\n\n"
                     f"--- ELASTIC (WSD) PARAMETERS ---\n"
-                    f"Concrete Modulus (E_c) : {res['E_c']:.2f} MPa\n"
+                    f"Concrete Modulus (E_c) : {res['E_c']:.2f} {f_unit}\n"
                     f"Modular Ratio (n)     : {res['n']:.2f}\n"
-                    f"Elastic NA Depth (x)  : {res['x']:.2f} mm\n"
-                    f"Service f_c / Allow   : {res['f_c']:.2f} / {res['f_c_allow']:.2f} MPa ({res['util_c']*100:.1f}%)\n"
-                    f"Service f_s / Allow   : {res['f_s']:.2f} / {res['f_s_allow']:.2f} MPa ({res['util_s']*100:.1f}%)\n\n"
+                    f"Elastic NA Depth (x)  : {res['x']:.2f} {l_unit}\n"
+                    f"Service f_c / Allow   : {res['f_c']:.2f} / {res['f_c_allow']:.2f} {f_unit} ({res['util_c']*100:.1f}%)\n"
+                    f"Service f_s / Allow   : {res['f_s']:.2f} / {res['f_s_allow']:.2f} {f_unit} ({res['util_s']*100:.1f}%)\n\n"
                     f"--- INELASTIC (USD) CAPACITY ---\n"
-                    f"Inelastic NA Depth (c): {inel['c']:.2f} mm\n"
-                    f"Stress Block Depth (a): {inel['a']:.2f} mm\n"
+                    f"Inelastic NA Depth (c): {inel['c']:.2f} {l_unit}\n"
+                    f"Stress Block Depth (a): {inel['a']:.2f} {l_unit}\n"
                     f"Steel Strain (eps_s)  : {inel['eps_s']:.5f}\n"
-                    f"Design Cap. (phi*M_n) : {inel['phi_M_n_knm']:.2f} kN·m ({res['util_ult']*100:.1f}%)\n"
+                    f"Design Cap. (phi*M_n) : {inel['phi_M_n']:.1f} {m_unit} ({res['util_ult']*100:.1f}%)\n"
                     f"Curvature Ductility µ_ϕ: {mc['ductility_ratio']:.2f}\n"
                     f"---------------------------------\n"
                     f"OVERALL DESIGN STATUS : {res['status']}"
                 )
                 window["-OUTPUT-"].update(out_text)
 
-                png_stress = generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel)
+                png_stress = generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel, selected_unit)
                 window["-IMAGE-STRESS-"].update(data=png_stress)
 
                 png_mph = generate_moment_curvature_plot_png(mc, m_serv, m_ult)
                 window["-IMAGE-MPH-"].update(data=png_mph)
+
+                png_latex = generate_latex_summary_card_png(res)
+                window["-IMAGE-LATEX-"].update(data=png_latex)
 
             except Exception as err:
                 sg.popup_error(f"Invalid input values: {err}", title="Input Error")
@@ -353,14 +456,24 @@ def run_gui() -> None:
 
 def self_check_headless() -> None:
     """Headless self-check for solver_gui.py."""
-    res = solve_flexure_section(28.0, 420.0, 300.0, 500.0, 1500.0, 100.0, 220.0)
-    assert res["status"] == "PASS"
-    assert res["mc_data"]["ductility_ratio"] > 1.0
-    png_stress = generate_inelastic_diagram_png(300.0, 500.0, 1500.0, 28.0, 420.0, res["inelastic"])
-    png_mph = generate_moment_curvature_plot_png(res["mc_data"], 100.0, 220.0)
+    # Check US Customary (kip-in, 1/in)
+    res_us = solve_flexure_section(4.0, 60.0, 12.0, 20.0, 2.37, 1200.0, 2000.0, "US")
+    assert res_us["status"] == "PASS"
+    assert res_us["mc_data"]["m_unit"] == "kip-in"
+    assert res_us["mc_data"]["phi_unit"] == "1/in"
+
+    # Check SI
+    res_si = solve_flexure_section(28.0, 420.0, 300.0, 500.0, 1500.0, 100.0, 220.0, "SI")
+    assert res_si["status"] == "PASS"
+
+    png_stress = generate_inelastic_diagram_png(12.0, 20.0, 2.37, 4.0, 60.0, res_us["inelastic"], "US")
+    png_mph = generate_moment_curvature_plot_png(res_us["mc_data"], 1200.0, 2000.0)
+    png_latex = generate_latex_summary_card_png(res_us)
+
     assert len(png_stress) > 1000
     assert len(png_mph) > 1000
-    print("solver_gui headless check passed!")
+    assert len(png_latex) > 1000
+    print("solver_gui US/SI & LaTeX headless check passed!")
 
 
 if __name__ == "__main__":
