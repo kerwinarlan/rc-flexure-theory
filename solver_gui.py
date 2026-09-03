@@ -1,4 +1,4 @@
-"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Step-by-Step LaTeX Solution, Whitney UDL Diagram & US/SI Support.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Board-Exam Aligned Step-by-Step LaTeX Solution, Whitney UDL Diagram & US/SI Support.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -166,7 +166,7 @@ def generate_inelastic_diagram_png(
 
     # Resultant Tension Force T pointing RIGHT (->)
     ax3.annotate("", xy=(s_x * 0.8, -d), xytext=(0, -d),
-                 arrowprops=dict(arrowstyle="->", color="red", lw=2.2))
+                 arrowprops=dict(arrowstyle="->", color="red", lw=2.0))
     ax3.text(s_x * 0.85, -d, "T = As·fs", color="red", fontweight="bold", fontsize=7, ha="left", va="center")
     ax3.set_xlim(-s_x * 1.5, s_x * 1.5)
 
@@ -251,7 +251,7 @@ def generate_moment_curvature_plot_png(
 
 
 def generate_step_by_step_latex_png(res: dict) -> bytes:
-    """Generate a step-by-step LaTeX solution card with explicit NSCP 2015 / ACI 318 citations."""
+    """Generate a board-exam aligned step-by-step LaTeX solution card with high readability."""
     units = res["units"]
     is_si = units.upper() == "SI"
     fc = res["fc"]
@@ -274,44 +274,66 @@ def generate_step_by_step_latex_png(res: dict) -> bytes:
     e_s_val = 200000.0 if is_si else 29000.0
     eps_y = fy / e_s_val
 
-    fig, ax = plt.subplots(figsize=(6.8, 3.4), dpi=100)
+    fig, ax = plt.subplots(figsize=(7.5, 5.2), dpi=120)
     fig.patch.set_facecolor("#FAFAFA")
     ax.axis("off")
 
-    lines = [
-        ("NSCP 2015 / ACI 318 Step-by-Step Flexural Solution", True, "#0D47A1"),
-        ("Step 1: Material & Section Parameters", True, "#1A237E"),
-        (r"$f'_c = %.1f \text{ %s} \rightarrow \beta_1 = %.2f$ (NSCP 2015 Table 422.2.2.4.3)" % (fc, f_unit, beta1), False, "#1A237E"),
-        (r"$\epsilon_y = \frac{f_y}{E_s} = \frac{%.1f}{%.0f} = %.5f$ (NSCP 2015 Sec 420.2.2.1)" % (fy, e_s_val, eps_y), False, "#1A237E"),
-        ("Step 2: Depth of Compression Stress Block (a)", True, "#1A237E"),
-        (r"$C = T \rightarrow 0.85 f'_c b a = A_s f_y$ (NSCP 2015 Sec 422.2.2)", False, "#1A237E"),
-        (r"$a = \frac{A_s f_y}{0.85 f'_c b} = \frac{%.1f \times %.1f}{0.85 \times %.1f \times %.1f} = \mathbf{%.2f \text{ %s}}$" % (a_s, fy, fc, b, a, l_unit), False, "#0D47A1"),
-        ("Step 3: Neutral Axis Depth (c) & Strain Verification", True, "#1A237E"),
-        (r"$c = \frac{a}{\beta_1} = \frac{%.2f}{%.2f} = \mathbf{%.2f \text{ %s}}$ (NSCP 2015 Table 422.2.2.4.3)" % (a, beta1, c, l_unit), False, "#0D47A1"),
-        (r"$\epsilon_s = 0.003 \cdot \frac{%.1f - %.2f}{%.2f} = %.5f \geq %.5f$ (Steel Yielded)" % (d, c, c, eps_s, eps_y), False, "#1A237E"),
-        ("Step 4: Strength Reduction Factor (ϕ) & Moment Capacity", True, "#1A237E"),
-        (r"$\epsilon_s = %.5f \geq 0.005 \rightarrow \phi = %.2f$ (NSCP 2015 Sec 421.2.2 - Ductile)" % (eps_s, phi), False, "#1A237E"),
-        (r"$M_n = A_s f_y \left(d - \frac{a}{2}\right) = \mathbf{%.1f \text{ %s}}$ (NSCP 2015 Sec 422.2)" % (m_n, m_unit), False, "#0D47A1"),
-        (r"$\phi M_n = %.2f \times %.1f = \mathbf{%.1f \text{ %s}}$ (NSCP 2015 Sec 421.2)" % (phi, m_n, phi_m_n, m_unit), False, "#0D47A1"),
+    ax.text(0.02, 0.96, "CE BOARD EXAM / NSCP 2015 STEP-BY-STEP SOLUTION", fontsize=10.5, fontweight="bold", color="#0D47A1")
+
+    steps = [
+        ("STEP 1: Material & Section Parameters", [
+            (r"$f'_c$", r"$= %.1f \text{ %s}$" % (fc, f_unit), f"(NSCP 2015 Table 422.2.2.4.3 -> beta_1 = {beta1:.2f})"),
+            (r"$\epsilon_y$", r"$= \frac{f_y}{E_s} = \frac{%.1f}{%.0f} = %.5f$" % (fy, e_s_val, eps_y), "(NSCP 2015 Sec 420.2.2.1)"),
+        ]),
+        ("STEP 2: Compression Stress Block Depth (a)", [
+            (r"$C$", r"$= T$", "(Equilibrium)"),
+            (r"$0.85 f'_c b a$", r"$= A_s f_y$", "(NSCP 2015 Sec 422.2.2)"),
+            (r"$a$", r"$= \frac{A_s f_y}{0.85 f'_c b}$", ""),
+            ("", r"$= \frac{%.1f \times %.1f}{0.85 \times %.1f \times %.1f}$" % (a_s, fy, fc, b), ""),
+            (r"$a$", r"$= \mathbf{%.2f \text{ %s}}$" % (a, l_unit), "[ANSWER: STRESS BLOCK DEPTH]"),
+        ]),
+        ("STEP 3: Neutral Axis Depth (c) & Strain Verification", [
+            (r"$c$", r"$= \frac{a}{\beta_1} = \frac{%.2f}{%.2f}$" % (a, beta1), ""),
+            (r"$c$", r"$= \mathbf{%.2f \text{ %s}}$" % (c, l_unit), "(NSCP 2015 Table 422.2.2.4.3)"),
+            (r"$\epsilon_s$", r"$= 0.003 \cdot \frac{d - c}{c}$", ""),
+            ("", r"$= 0.003 \cdot \frac{%.1f - %.2f}{%.2f}$" % (d, c, c), ""),
+            (r"$\epsilon_s$", r"$= %.5f \geq %.5f$" % (eps_s, eps_y), "(Steel Yielded & Tension-Controlled, phi = 0.90)"),
+        ]),
+        ("STEP 4: Nominal & Design Flexural Capacities", [
+            (r"$M_n$", r"$= A_s f_y \left(d - \frac{a}{2}\right)$", "(NSCP 2015 Sec 422.2)"),
+            ("", r"$= %.1f \times %.1f \times \left(%.1f - \frac{%.2f}{2}\right) \times 10^{-6}$" % (a_s, fy, d, a) if is_si else r"$= %.2f \times %.1f \times \left(%.1f - \frac{%.2f}{2}\right)$" % (a_s, fy, d, a), ""),
+            (r"$M_n$", r"$= \mathbf{%.1f \text{ %s}}$" % (m_n, m_unit), "[NOMINAL MOMENT]"),
+            (r"$\phi M_n$", r"$= %.2f \times %.1f = \mathbf{%.1f \text{ %s}}$" % (phi, m_n, phi_m_n, m_unit), "[DESIGN CAPACITY - NSCP 2015 Sec 421.2]"),
+        ]),
     ]
 
-    y_pos = 0.96
-    for text, is_bold, color in lines:
-        fontw = "bold" if is_bold else "normal"
-        fsize = 8.2 if is_bold else 7.5
-        ax.text(0.02, y_pos, text, fontsize=fsize, fontweight=fontw, color=color)
-        y_pos -= 0.068
+    y_pos = 0.89
+    for header, lines in steps:
+        ax.text(0.02, y_pos, header, fontsize=8.8, fontweight="bold", color="#1A237E")
+        y_pos -= 0.038
+        for lhs, rhs, cite in lines:
+            if lhs:
+                ax.text(0.18, y_pos, lhs, fontsize=8.2, color="#0D47A1", ha="right")
+            if rhs:
+                is_result = "[ANSWER" in cite or "[NOMINAL" in cite or "[DESIGN" in cite or "%.2f" % a in rhs or "%.1f" % phi_m_n in rhs
+                col = "#B71C1C" if is_result else "#1A237E"
+                ax.text(0.20, y_pos, rhs, fontsize=8.2, color=col, ha="left")
+            if cite:
+                col_cite = "#B71C1C" if "[" in cite else "#5C6BC0"
+                ax.text(0.98, y_pos, cite, fontsize=7.2, fontweight="bold" if "[" in cite else "normal", color=col_cite, ha="right")
+            y_pos -= 0.036
+        y_pos -= 0.012
 
     plt.tight_layout()
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
     plt.close(fig)
     return buf.getvalue()
 
 
 def generate_latex_summary_card_png(res: dict) -> bytes:
-    """Generate a summary card rendering publication-quality math."""
+    """Generate a step-by-step LaTeX formula summary card rendering publication-quality math."""
     units = res["units"]
     is_si = units.upper() == "SI"
     ec = res["E_c"]
@@ -430,7 +452,7 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
                 [
                     [
                         sg.Tab(
-                            "Step-by-Step LaTeX Solution",
+                            "Step-by-Step Board Solution",
                             [[sg.Image(key="-IMAGE-STEPS-", size=(460, 270))]],
                         ),
                         sg.Tab(
@@ -563,7 +585,7 @@ def self_check_headless() -> None:
     assert len(png_stress) > 1000
     assert len(png_mph) > 1000
     assert len(png_latex) > 1000
-    print("solver_gui CE 152 Example 3 & Step-by-Step LaTeX check passed!")
+    print("solver_gui CE 152 Example 3 & Aligned Step-by-Step LaTeX check passed!")
 
 
 if __name__ == "__main__":
