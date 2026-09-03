@@ -8,20 +8,22 @@ This repository provides core equations for concrete elastic modulus, modular ra
 It solves classic university flexure problems including **CE 152 Example 3** ($a=103.76\text{ mm}$ or $4.09\text{ in}$), **CE 152 Slide 35 Balanced Condition** ($c_{bal}=338.24\text{ mm}, \rho_b=2.83\%$), and **CE 152 Slide 5425** ($M_{max}=2800\text{ kip-in}$ to $6200\text{ kip-in}$).
 It supports real-time dual-unit conversion between **US Customary units** ($\text{kip-in}, 1/\text{in}, \text{ksi}, \text{in}$) and **SI Metric units** ($\text{kN}\cdot\text{m}, \text{rad/m}, \text{MPa}, \text{mm}$).
 Any preset example or custom input converts and plots in either unit system instantly.
-The application includes a desktop solver GUI with **Interactive Parametric $M - \phi$ Variable Dropdowns** ($A_s, d, f'_c, b, f_y$), **Step-by-Step Board Solution Cards** (aligned $=$ signs), **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$), and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
+The application includes a desktop solver GUI with **Reinforcement Ratio ($\rho$) vs Moment Strength Graphs** (with section inset visuals), **Steel Strain ($\epsilon_t$) vs Reduction Factor ($\phi$) Plots**, **Interactive Parametric $M - \phi$ Variable Dropdowns** ($A_s, d, f'_c, b, f_y$), **Step-by-Step Board Solution Cards** (aligned $=$ signs), **Whitney UDL stress block diagrams** ($C \leftarrow$, $T \rightarrow$), and **LaTeX math derivation cards** built with `FreeSimpleGUI` and `matplotlib` following Engr. Jaydee Lucero's design pattern.
 It also includes an **NSCP 2015 OCR Indexer System** (`nscp_indexer.py`) for cover-to-cover PDF study and knowledge extraction.
 
 All calculations follow the National Structural Code of the Philippines (NSCP 2015, 7th Edition) and ACI 318.
 
-## Parametric $M - \phi$ Variable Comparison ($A_s, d, f'_c, b, f_y$)
+## Interactive Plot Views
 
-The GUI dropdown allows plotting continuous moment-curvature curves across 5 design variables:
+The GUI dropdown allows selecting 7 dedicated visualization views:
 
-1. **Steel Area ($A_s$)**: Increasing $A_s$ increases $M_n$ (taller curve) but reduces ultimate curvature $\phi_u$ (less ductile).
-2. **Effective Depth ($d$)**: Increasing $d$ increases internal moment arm $(d - a/2)$ and flexural capacity $M_n$.
-3. **Concrete Strength ($f'_c$)**: Increasing $f'_c$ reduces stress block depth $a$, increasing concrete strain margin.
-4. **Beam Width ($b$)**: Increasing $b$ increases compression area, reducing stress block depth $a$.
-5. **Steel Yield Strength ($f_y$)**: Increasing $f_y$ increases yield strain $\epsilon_y = f_y / E_s$ and yield moment $M_y$.
+1. **Step-by-Step Board Solution**: Aligned equal signs ($=$) and exact NSCP 2015 section citations in parentheses.
+2. **Reinforcement Ratio ($\rho$) vs Moment Strength**: Plots $M_n$ and $\phi M_n$ vs $\rho$ with a cross-section inset diagram.
+3. **Strain ($\epsilon_t$) vs Phi ($\phi$) Reduction Factor**: Shaded regions for Compression-Controlled ($\phi=0.65$), Transition ($\phi=0.65\rightarrow 0.90$), and Tension-Controlled ($\phi=0.90$).
+4. **Parametric $M - \phi$ vs Variable**: Interactive comparison across $A_s, d, f'_c, b, f_y$.
+5. **Whitney Stress UDL Diagram**: $C \leftarrow$, $T \rightarrow$, and horizontal stretch lines ($y=0, -a, -c, -d, -h$).
+6. **3-Region Moment - Curvature ($M - \phi$)**: Shaded regions O->C, C->Y, Y->U with limit points O, C, Y, U.
+7. **LaTeX Math Derivation**: Step-by-step mathematical summary card.
 
 ## Three Flexural Behavior Regions
 
@@ -75,7 +77,7 @@ $$\phi_u = \frac{\epsilon_u}{c} = \frac{0.003}{c}, \quad \mu_\phi = \frac{\phi_u
 ```
 rc-flexure-theory/
 ├── flexure.py                 # Core NSCP 2015 / ACI 318 flexure & fiber module (US/SI)
-├── solver_gui.py              # FreeSimpleGUI solver GUI with real-time US <-> SI unit conversion
+├── solver_gui.py              # FreeSimpleGUI solver GUI with 7 plot views & US/SI unit conversion
 ├── nscp_indexer.py            # NSCP 2015 PDF OCR study & search tool
 ├── NSCP_AGENT_PROTOCOL.md     # Agent study protocol & review guidelines
 ├── PARAMETER_LEDGER.md        # Parameter provenance tracking table
@@ -109,7 +111,7 @@ Self-check passed:
   CE 152 Slide 35   : c_bal = 338.24 mm, rho_b = 2.83%
   Continuous M-phi : 59 points, M_n=2596.2 kip-in
   Ductility Ratio   : 4.76
-solver_gui Real-Time Unit Conversion US <-> SI check passed!
+solver_gui Rho vs Mn & Strain vs Phi check passed!
 ```
 
 ## Parameter Provenance

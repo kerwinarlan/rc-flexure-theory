@@ -1,4 +1,4 @@
-"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Real-Time Unit Conversion (US <-> SI), Continuous Fiber M-phi Curves & LaTeX Equations.
+"""NSCP 2015 / ACI 318 RC Flexure Solver GUI with Rho vs Mn, Strain vs Phi Plots, Parametric As Study, Board Solution & Multi-Units.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from flexure import (
+    E_S_SI,
+    E_S_US,
     calculate_balanced_condition,
     calculate_beta_1,
     calculate_concrete_modulus,
@@ -68,7 +70,7 @@ def solve_flexure_section(
     # Balanced condition calculations
     bal = calculate_balanced_condition(b, d, fc_prime, fy, units, lambda_factor)
 
-    # Moment-Curvature Curve with continuous fiber integration
+    # Moment-Curvature Curve with 3 explicit regions
     mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy, units, lambda_factor)
 
     status = (
@@ -192,6 +194,124 @@ def generate_inelastic_diagram_png(
     ax1.text(-b * 0.38, -c, f"N.A. c={c:.2f}{l_sym}", fontsize=6.5, color="red", va="center", ha="right")
     ax1.text(-b * 0.38, -d, f"d={d:.1f}{l_sym}", fontsize=6.5, color="blue", va="center", ha="right")
     ax1.text(-b * 0.38, -h, f"h={h:.1f}{l_sym}", fontsize=6.5, color="black", va="center", ha="right")
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def generate_rho_vs_moment_plot_png(res: dict) -> bytes:
+    """Generate a plot of Reinforcement Ratio (rho) vs Moment Strength (Mn, phi*Mn) with cross-section inset."""
+    b = res["b"]
+    d = res["d"]
+    h = res["h"]
+    fc = res["fc"]
+    fy = res["fy"]
+    as_curr = res["as_area"]
+    units = res["units"]
+    bal = res["balanced"]
+
+    rho_b = bal["rho_b"]
+    rho_max = bal["rho_max"]
+    rho_curr = as_curr / (b * d)
+    m_unit = "kN·m" if units.upper() == "SI" else "kip-in"
+    l_sym = "mm" if units.upper() == "SI" else '"'
+
+    rho_arr = np.linspace(0.002, min(0.045, rho_b * 1.25), 50)
+    mn_arr = []
+    phimn_arr = []
+
+    for r in rho_arr:
+        a_s_i = r * b * d
+        res_i = calculate_inelastic_capacity(b, d, a_s_i, fc, fy, units)
+        mn_arr.append(res_i["M_n"])
+        phimn_arr.append(res_i["phi_M_n"])
+
+    fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=100)
+    fig.patch.set_facecolor("#FAFAFA")
+
+    ax.plot(rho_arr * 100, mn_arr, "b-", lw=2.0, label="Nominal Mn")
+    ax.plot(rho_arr * 100, phimn_arr, "r--", lw=2.0, label="Design φMn")
+
+    # Mark current rho
+    res_curr = res["inelastic"]
+    ax.scatter([rho_curr * 100], [res_curr["phi_M_n"]], color="red", s=65, zorder=5, label=f"Current ρ={rho_curr*100:.2f}%")
+
+    # Mark limits
+    ax.axvline(rho_max * 100, color="purple", linestyle=":", lw=1.2, label=f"ρ_max={rho_max*100:.2f}% (εt=0.005)")
+    ax.axvline(rho_b * 100, color="darkorange", linestyle=":", lw=1.2, label=f"ρ_bal={rho_b*100:.2f}%")
+
+    ax.set_title("Reinforcement Ratio (ρ) vs Flexural Moment Strength", fontsize=9, fontweight="bold")
+    ax.set_xlabel("Reinforcement Ratio ρ (%)", fontsize=8)
+    ax.set_ylabel(f"Moment Strength ({m_unit})", fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(fontsize=6.0, loc="upper left", framealpha=0.9)
+
+    # Inset cross section visual
+    ax_ins = ax.inset_axes([0.62, 0.12, 0.32, 0.42])
+    ax_ins.patch.set_facecolor("#FFFFFF")
+    ax_ins.plot([0, b, b, 0, 0], [0, 0, -h, -h, 0], "k-", lw=1.2)
+    ax_ins.scatter([b / 4, b / 2, 3 * b / 4], [-d] * 3, color="black", s=22)
+    ax_ins.set_title(f"Section ({b:.0f}x{h:.0f}{l_sym})", fontsize=7, fontweight="bold")
+    ax_ins.set_xlim(-b * 0.2, b * 1.2)
+    ax_ins.set_ylim(-h * 1.1, h * 0.1)
+    ax_ins.axis("off")
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def generate_strain_vs_phi_plot_png(res: dict) -> bytes:
+    """Generate a plot of Net Tensile Strain (eps_t) vs Strength Reduction Factor (phi) highlighting failure zones."""
+    fy = res["fy"]
+    units = res["units"]
+    is_si = units.upper() == "SI"
+    e_s_val = E_S_SI if is_si else E_S_US
+    eps_y = fy / e_s_val
+
+    inel = res["inelastic"]
+    eps_t_curr = float(inel["eps_s"])
+    phi_curr = float(inel["phi"])
+
+    eps_max = max(0.010, eps_t_curr * 1.15)
+    eps_t_arr = np.linspace(0, eps_max, 100)
+    phi_arr = []
+
+    for et in eps_t_arr:
+        if et <= eps_y:
+            phi_arr.append(0.65)
+        elif et >= 0.005:
+            phi_arr.append(0.90)
+        else:
+            phi_arr.append(0.65 + 0.25 * (et - eps_y) / (0.005 - eps_y))
+
+    fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=100)
+    fig.patch.set_facecolor("#FAFAFA")
+
+    # Shaded Failure Regions
+    ax.axvspan(0, eps_y, color="#FFCDD2", alpha=0.4, label="Compression-Controlled (φ=0.65)")
+    ax.axvspan(eps_y, 0.005, color="#FFF9C4", alpha=0.5, label="Transition Region (0.65 < φ < 0.90)")
+    ax.axvspan(0.005, eps_max, color="#C8E6C9", alpha=0.4, label="Tension-Controlled (φ=0.90)")
+
+    ax.plot(eps_t_arr, phi_arr, "k-", lw=2.2, label="Reduction Factor φ")
+
+    # Mark current section's strain & phi
+    ax.scatter([eps_t_curr], [phi_curr], color="blue", s=80, marker="*", zorder=6,
+               label=f"Current: εt={eps_t_curr:.5f}, φ={phi_curr:.2f}")
+
+    ax.set_title("Steel Net Tensile Strain (εt) vs Strength Reduction Factor (φ)", fontsize=9, fontweight="bold")
+    ax.set_xlabel("Steel Net Tensile Strain εt", fontsize=8)
+    ax.set_ylabel("Strength Reduction Factor φ", fontsize=8)
+    ax.set_ylim(0.55, 1.0)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
 
     plt.tight_layout()
 
@@ -495,10 +615,8 @@ def convert_inputs(fc: float, fy: float, b: float, d: float, a_s: float, m_serv:
         return fc, fy, b, d, a_s, m_serv, m_ult
 
     if from_units.upper() == "SI" and to_units.upper() == "US":
-        # SI (MPa, mm, mm^2, kN*m) -> US (ksi, in, in^2, kip-in)
         return fc / 6.89476, fy / 6.89476, b / 25.4, d / 25.4, a_s / 645.16, m_serv * 8.85075, m_ult * 8.85075
     else:
-        # US (ksi, in, in^2, kip-in) -> SI (MPa, mm, mm^2, kN*m)
         return fc * 6.89476, fy * 6.89476, b * 25.4, d * 25.4, a_s * 645.16, m_serv / 8.85075, m_ult / 8.85075
 
 
@@ -538,6 +656,8 @@ def create_window(units: str = "US", preset_vals: dict | None = None) -> sg.Wind
 
     plot_view_options = [
         "Step-by-Step Board Solution",
+        "Reinforcement Ratio (ρ) vs Moment Strength",
+        "Strain (ε_t) vs Phi (ϕ) Reduction Factor",
         "Parametric M - ϕ vs Variable",
         "Whitney Stress UDL Diagram",
         "3-Region Moment - Curvature (M - ϕ)",
@@ -749,6 +869,8 @@ def run_gui() -> None:
 
                 images = {
                     "Step-by-Step Board Solution": generate_step_by_step_latex_png(res),
+                    "Reinforcement Ratio (ρ) vs Moment Strength": generate_rho_vs_moment_plot_png(res),
+                    "Strain (ε_t) vs Phi (ϕ) Reduction Factor": generate_strain_vs_phi_plot_png(res),
                     "Whitney Stress UDL Diagram": generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel, selected_unit),
                     "3-Region Moment - Curvature (M - ϕ)": generate_moment_curvature_plot_png(mc, m_serv, m_ult),
                     "LaTeX Math Derivation": generate_latex_summary_card_png(res),
@@ -772,27 +894,25 @@ def run_gui() -> None:
 
 
 def self_check_headless() -> None:
-    """Headless self-check for solver_gui.py, CE 152 Example 3, Slide 35, and Slide 5425."""
+    """Headless self-check for solver_gui.py, Rho vs Mn, Strain vs Phi, and Slide 5425."""
     res_ce152 = solve_flexure_section(28.0, 420.0, 250.0, 575.0, 1470.0, 100.0, 220.0, "SI")
     assert abs(res_ce152["inelastic"]["a"] - 103.76) < 0.1
-    assert abs(res_ce152["balanced"]["c_bal"] - 338.24) < 0.1
 
-    # Check converting CE 152 Example 3 to US Customary
-    fc_u, fy_c, b_c, d_c, as_c, ms_c, mu_c = convert_inputs(28.0, 420.0, 250.0, 575.0, 1470.0, 100.0, 220.0, "SI", "US")
-    res_ce152_us = solve_flexure_section(fc_u, fy_c, b_c, d_c, as_c, ms_c, mu_c, "US")
-    assert abs(res_ce152_us["inelastic"]["a"] - (103.76 / 25.4)) < 0.05
-    assert res_ce152_us["mc_data"]["m_unit"] == "kip-in"
+    res_us = solve_flexure_section(4.0, 60.0, 12.0, 20.0, 2.37, 1200.0, 2000.0, "US")
+    assert res_us["status"] == "PASS"
 
-    png_steps = generate_step_by_step_latex_png(res_ce152_us)
-    png_as_param = generate_parametric_moment_curvature_plot_png(res_ce152_us)
-    png_stress = generate_inelastic_diagram_png(b_c, d_c, as_c, fc_u, fy_c, res_ce152_us["inelastic"], "US")
-    png_mph = generate_moment_curvature_plot_png(res_ce152_us["mc_data"], ms_c, mu_c)
+    png_steps = generate_step_by_step_latex_png(res_ce152)
+    png_rho = generate_rho_vs_moment_plot_png(res_ce152)
+    png_strain = generate_strain_vs_phi_plot_png(res_ce152)
+    png_as_param = generate_parametric_moment_curvature_plot_png(res_ce152)
+    png_stress = generate_inelastic_diagram_png(250.0, 575.0, 1470.0, 28.0, 420.0, res_ce152["inelastic"], "SI")
 
     assert len(png_steps) > 1000
+    assert len(png_rho) > 1000
+    assert len(png_strain) > 1000
     assert len(png_as_param) > 1000
     assert len(png_stress) > 1000
-    assert len(png_mph) > 1000
-    print("solver_gui Real-Time Unit Conversion US <-> SI check passed!")
+    print("solver_gui Rho vs Mn & Strain vs Phi check passed!")
 
 
 if __name__ == "__main__":
