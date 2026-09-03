@@ -9,10 +9,12 @@ This ledger tracks all physical parameters for reinforced concrete flexure analy
 | $f'_c$ | 28 | MPa | ASSUMED | Standard design grade | Specified compressive strength | Concrete modulus $E_c$, $\beta_1$, Whitney block |
 | $f_y$ | 420 | MPa | ASSUMED | Grade 420 steel | Specified yield strength | Nominal capacity $M_n$, $\epsilon_y$ |
 | $E_c$ | 24870.06 | MPa | CORRELATED | NSCP 2015 Sec 419.2.2.1 | $E_c = 4700\sqrt{f'_c}$ | Modular ratio $n$ |
+| $f_r$ | 3.28 | MPa | CORRELATED | NSCP 2015 Sec 419.2.3.1 | $f_r = 0.62\sqrt{f'_c}$ | Cracking moment $M_{cr}$ |
 | $n$ | 8.04 | - | CALCULATED | NSCP 2015 Sec 424.5.2 | $n = E_s / E_c$ | Transformed elastic section |
 | $\beta_1$ | 0.85 | - | CALCULATED | NSCP 2015 Sec 422.2.2.4 | $\beta_1 = 0.85 - 0.05(f'_c - 28)/7$ | Whitney stress block depth |
 | $b$ | 300 | mm | ASSUMED | Beam design geometry | Section width | Neutral axis $x, c$, $I_{cr}$, $M_n$ |
 | $d$ | 500 | mm | ASSUMED | Beam design geometry | Effective depth | Neutral axis $x, c$, $I_{cr}$, $M_n$ |
+| $h$ | 565 | mm | ASSUMED | Total section height | Total depth | $I_g$, $M_{cr}$ |
 | $A_s$ | 1500 | mm² | ASSUMED | Reinforcement layout | Tension steel area | Neutral axis $x, c$, $I_{cr}$, $M_n$ |
 | $x$ | 164.30 | mm | CALCULATED | NSCP 2015 Sec 424.5 | $\frac{1}{2} b x^2 + n A_s x - n A_s d = 0$ | Elastic neutral axis depth |
 | $Q_c$ | 4049393 | mm³ | CALCULATED | NSCP 2015 Sec 424.5 | $A_c x_c = (b x)(x/2)$ | First moment equilibrium |
@@ -24,5 +26,8 @@ This ledger tracks all physical parameters for reinforced concrete flexure analy
 | $a$ | 88.24 | mm | CALCULATED | NSCP 2015 Sec 422.2.2.4 | $a = \beta_1 c$ | Whitney stress block depth |
 | $\epsilon_s$ | 0.01145 | - | CALCULATED | NSCP 2015 Sec 422.2 | $\epsilon_s = 0.003(d - c)/c$ | Tension steel net strain |
 | $\phi$ | 0.90 | - | CALCULATED | NSCP 2015 Sec 421.2.2 | $\phi = 0.90 \text{ for } \epsilon_t \ge 0.005$ | Flexural strength reduction factor |
+| $M_{cr}$ | 52.36 | kN·m | CALCULATED | NSCP 2015 Sec 419.2.3 | $M_{cr} = f_r I_g / y_t$ | Cracking moment |
+| $M_y$ | 280.50 | kN·m | CALCULATED | Flexural Mechanics | $M_y = f_y I_{cr} / [n(d-x)]$ | Steel yield moment |
 | $M_n$ | 287.21 | kN·m | CALCULATED | NSCP 2015 Sec 422.2 | $M_n = A_s f_s (d - a/2)$ | Nominal flexural strength |
 | $\phi M_n$ | 258.49 | kN·m | CALCULATED | NSCP 2015 Sec 421.2 | $\phi M_n = \phi \cdot M_n$ | Design flexural strength |
+| $\mu_\phi$ | 4.62 | - | CALCULATED | Flexural Mechanics | $\mu_\phi = \phi_u / \phi_y$ | Curvature ductility ratio |

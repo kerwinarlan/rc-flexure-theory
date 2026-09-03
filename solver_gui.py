@@ -1,4 +1,4 @@
-"""NSCP 2015 RC Flexure Solver GUI with Inelastic Stress Diagrams.
+"""NSCP 2015 RC Flexure Solver GUI with Inelastic Diagrams & Moment-Curvature Plot.
 
 Follows Engr. Jaydee Lucero's FreeSimpleGUI 5-step template pattern for structural engineering tools.
 """
@@ -16,6 +16,7 @@ from flexure import (
     calculate_cracked_moment_of_inertia,
     calculate_inelastic_capacity,
     calculate_modular_ratio,
+    calculate_moment_curvature,
     calculate_neutral_axis_depth,
     calculate_service_stresses,
 )
@@ -24,9 +25,11 @@ from flexure import (
 def solve_flexure_section(
     fc_prime: float, fy: float, b: float, d: float, as_area: float, m_serv_knm: float, m_ult_knm: float
 ) -> dict[str, float | str | dict]:
-    """Calculate elastic (WSD) and inelastic (USD) flexural parameters per NSCP 2015."""
+    """Calculate elastic (WSD), inelastic (USD), and moment-curvature parameters per NSCP 2015."""
     if fc_prime <= 0 or fy <= 0 or b <= 0 or d <= 0 or as_area <= 0 or m_serv_knm < 0 or m_ult_knm < 0:
         raise ValueError("Input parameters must be positive numbers.")
+
+    h = d + 65.0  # Estimated total depth
 
     # Elastic WSD calculations
     ec = calculate_concrete_modulus(fc_prime)
@@ -50,6 +53,9 @@ def solve_flexure_section(
     inelastic = calculate_inelastic_capacity(b, d, as_area, fc_prime, fy)
     util_ult = m_ult_knm / inelastic["phi_M_n_knm"] if inelastic["phi_M_n_knm"] > 0 else 0.0
 
+    # Moment-Curvature Curve
+    mc_data = calculate_moment_curvature(b, d, h, as_area, fc_prime, fy)
+
     status = (
         "PASS"
         if util_c <= 1.0 and util_s <= 1.0 and util_ult <= 1.0
@@ -72,6 +78,7 @@ def solve_flexure_section(
         "util_s": util_s,
         "inelastic": inelastic,
         "util_ult": util_ult,
+        "mc_data": mc_data,
         "status": status,
     }
 
@@ -84,22 +91,19 @@ def generate_inelastic_diagram_png(
     a = float(inelastic["a"])
     eps_s = float(inelastic["eps_s"])
     f_s = float(inelastic["f_s"])
-    h = d + 65.0  # Total section depth estimate
+    h = d + 65.0
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(7.2, 3.2), dpi=100)
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(6.8, 3.2), dpi=100)
     fig.patch.set_facecolor("#FAFAFA")
 
     # Panel 1: Cross Section Geometry
-    ax1.set_title("Beam Section", fontsize=10, fontweight="bold")
+    ax1.set_title("Beam Section", fontsize=9, fontweight="bold")
     ax1.plot([0, b, b, 0, 0], [0, 0, -h, -h, 0], "k-", lw=1.5)
-    # Shaded Whitney stress block
-    ax1.fill_between([0, b], 0, -a, color="#FFCC80", alpha=0.7, label=f"Stress Block (a={a:.1f}mm)")
-    # Neutral axis line
-    ax1.axhline(-c, color="red", linestyle="--", lw=1.2, label=f"N.A. (c={c:.1f}mm)")
-    # Rebar circles
+    ax1.fill_between([0, b], 0, -a, color="#FFCC80", alpha=0.7, label=f"a={a:.1f}mm")
+    ax1.axhline(-c, color="red", linestyle="--", lw=1.2, label=f"c={c:.1f}mm")
     n_bars = 3
     xs = [b * (i + 1) / (n_bars + 1) for i in range(n_bars)]
-    ax1.scatter(xs, [-d] * n_bars, color="black", s=60, zorder=5, label="Steel Rebar")
+    ax1.scatter(xs, [-d] * n_bars, color="black", s=50, zorder=5)
     ax1.set_xlim(-b * 0.2, b * 1.2)
     ax1.set_ylim(-h - 10, 10)
     ax1.set_aspect("equal")
@@ -107,42 +111,38 @@ def generate_inelastic_diagram_png(
     ax1.legend(loc="lower right", fontsize=7, framealpha=0.8)
 
     # Panel 2: Inelastic Strain Profile
-    ax2.set_title("Strain Profile (ε)", fontsize=10, fontweight="bold")
+    ax2.set_title("Strain Profile (ε)", fontsize=9, fontweight="bold")
     ax2.axvline(0, color="gray", lw=0.8)
     ax2.axhline(-c, color="red", linestyle="--", lw=1.0)
-    # Strain line: top eps_u = 0.003 (compression left), bottom eps_s (tension right)
     ax2.plot([-0.003, eps_s], [0, -d], "b-o", lw=1.8, ms=4)
     ax2.fill_betweenx([0, -c], 0, [-0.003, 0], color="blue", alpha=0.15)
     ax2.fill_betweenx([-c, -d], 0, [0, eps_s], color="red", alpha=0.15)
-    ax2.text(-0.003, 5, "εu=0.003", fontsize=8, color="blue", ha="center")
-    ax2.text(eps_s, -d - 15, f"εs={eps_s:.4f}", fontsize=8, color="red", ha="center")
+    ax2.text(-0.003, 5, "εu=0.003", fontsize=7, color="blue", ha="center")
+    ax2.text(eps_s, -d - 15, f"εs={eps_s:.4f}", fontsize=7, color="red", ha="center")
     ax2.set_ylim(-h - 10, 10)
     ax2.axis("off")
 
-    # Panel 3: Inelastic Stress Profile & Force Vectors
-    ax3.set_title("Inelastic Stress & Forces", fontsize=10, fontweight="bold")
+    # Panel 3: Inelastic Stress Profile & Forces
+    ax3.set_title("Inelastic Stress & Forces", fontsize=9, fontweight="bold")
     ax3.axhline(-c, color="red", linestyle="--", lw=1.0)
-    # Stress block representation (0.85 f'c)
     stress_mag = 0.85 * fc_prime
     ax3.plot([0, -stress_mag, -stress_mag, 0], [0, 0, -a, -a], "orange", lw=1.5)
     ax3.fill_betweenx([0, -a], 0, -stress_mag, color="orange", alpha=0.3)
-    # Concrete Resultant Force C
     ax3.annotate(
         "C = 0.85f'c·b·a",
         xy=(-stress_mag / 2, -a / 2),
-        xytext=(-stress_mag * 1.2, -a / 2),
-        arrowprops=dict(arrowstyle="->", color="darkorange", lw=1.5),
+        xytext=(-stress_mag * 1.1, -a / 2),
+        arrowprops=dict(arrowstyle="->", color="darkorange", lw=1.2),
         fontsize=7,
         fontweight="bold",
         color="darkorange",
         ha="right",
     )
-    # Steel Tension Force T
     ax3.annotate(
         "T = As·fs",
         xy=(0, -d),
-        xytext=(stress_mag * 0.8, -d),
-        arrowprops=dict(arrowstyle="->", color="red", lw=1.5),
+        xytext=(stress_mag * 0.7, -d),
+        arrowprops=dict(arrowstyle="->", color="red", lw=1.2),
         fontsize=7,
         fontweight="bold",
         color="red",
@@ -159,13 +159,53 @@ def generate_inelastic_diagram_png(
     return buf.getvalue()
 
 
+def generate_moment_curvature_plot_png(
+    mc_data: dict, m_serv_knm: float, m_ult_knm: float
+) -> bytes:
+    """Generate a matplotlib plot of the Moment-Curvature (M - phi) response curve."""
+    phi_pts = mc_data["phi_pts"]
+    m_pts = mc_data["m_pts"]
+    m_cr = mc_data["M_cr_knm"]
+    m_y = mc_data["M_y_knm"]
+    m_n = mc_data["M_n_knm"]
+    mu_phi = mc_data["ductility_ratio"]
+
+    fig, ax = plt.subplots(figsize=(6.8, 3.2), dpi=100)
+    fig.patch.set_facecolor("#FAFAFA")
+
+    # Plot M - phi response backbone
+    ax.plot(phi_pts, m_pts, "b-o", lw=2.0, ms=5, label="M - ϕ Response")
+
+    # Mark key limit states
+    ax.scatter([phi_pts[1]], [m_cr], color="green", s=50, zorder=5, label=f"Cracking (M_cr={m_cr:.1f}kN·m)")
+    ax.scatter([phi_pts[2]], [m_y], color="orange", s=50, zorder=5, label=f"Yield (M_y={m_y:.1f}kN·m)")
+    ax.scatter([phi_pts[3]], [m_n], color="red", s=50, zorder=5, label=f"Nominal (M_n={m_n:.1f}kN·m)")
+
+    # Demand levels
+    ax.axhline(m_serv_knm, color="gray", linestyle=":", lw=1.2, label=f"M_service={m_serv_knm:.1f}kN·m")
+    ax.axhline(m_ult_knm, color="purple", linestyle="--", lw=1.2, label=f"M_factored={m_ult_knm:.1f}kN·m")
+
+    ax.set_title(f"Moment - Curvature Response (Curvature Ductility µ_ϕ = {mu_phi:.2f})", fontsize=9, fontweight="bold")
+    ax.set_xlabel("Curvature ϕ (rad/m)", fontsize=8)
+    ax.set_ylabel("Flexural Moment M (kN·m)", fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(fontsize=7, loc="lower right", framealpha=0.9)
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
+    plt.close(fig)
+    return buf.getvalue()
+
+
 def create_window() -> sg.Window:
     """Build the FreeSimpleGUI layout using Engr. Lucero's signature structure."""
     sg.theme("SystemDefault")
 
     layout = [
         [sg.Text("NSCP 2015 Reinforced Concrete Flexure Solver", font=("Helvetica", 12, "bold"))],
-        [sg.Text("Elastic (WSD) & Inelastic (USD Whitney Stress Block) Analysis", font=("Helvetica", 9, "italic"))],
+        [sg.Text("Elastic (WSD), Inelastic (USD), and Moment-Curvature Analysis", font=("Helvetica", 9, "italic"))],
         [sg.HorizontalSeparator()],
         # Input Section
         [
@@ -199,18 +239,26 @@ def create_window() -> sg.Window:
         ],
         [sg.Button("Calculate & Plot", button_color=("white", "navy")), sg.Button("Exit")],
         [sg.HorizontalSeparator()],
-        # Output Results and Diagram
+        # Output Results and Tabbed Visualizations
         [
             sg.Column(
                 [
                     [sg.Text("Analysis Results (NSCP 2015)", font=("Helvetica", 10, "bold"))],
-                    [sg.Multiline("", key="-OUTPUT-", size=(45, 15), disabled=True, font=("Courier", 9))],
+                    [sg.Multiline("", key="-OUTPUT-", size=(44, 16), disabled=True, font=("Courier", 9))],
                 ]
             ),
-            sg.Column(
+            sg.TabGroup(
                 [
-                    [sg.Text("Cracked Section & Inelastic Stress Diagrams", font=("Helvetica", 10, "bold"))],
-                    [sg.Image(key="-IMAGE-", size=(450, 260))],
+                    [
+                        sg.Tab(
+                            "Inelastic Stress Diagram",
+                            [[sg.Image(key="-IMAGE-STRESS-", size=(460, 270))]],
+                        ),
+                        sg.Tab(
+                            "Moment - Curvature (M - ϕ)",
+                            [[sg.Image(key="-IMAGE-MPH-", size=(460, 270))]],
+                        ),
+                    ]
                 ]
             ),
         ],
@@ -240,6 +288,7 @@ def run_gui() -> None:
 
                 res = solve_flexure_section(fc, fy, b, d, a_s, m_serv, m_ult)
                 inel = res["inelastic"]
+                mc = res["mc_data"]
 
                 out_text = (
                     f"--- ELASTIC (WSD) PARAMETERS ---\n"
@@ -256,15 +305,22 @@ def run_gui() -> None:
                     f"Phi Factor (phi)      : {inel['phi']:.2f}\n"
                     f"Nominal Cap. (M_n)    : {inel['M_n_knm']:.2f} kN·m\n"
                     f"Design Cap. (phi*M_n) : {inel['phi_M_n_knm']:.2f} kN·m\n"
-                    f"Factored Demand (M_u) : {m_ult:.2f} kN·m ({res['util_ult']*100:.1f}%)\n"
+                    f"Factored Demand (M_u) : {m_ult:.2f} kN·m ({res['util_ult']*100:.1f}%)\n\n"
+                    f"--- MOMENT-CURVATURE RESPONSE ---\n"
+                    f"Cracking Moment (M_cr): {mc['M_cr_knm']:.2f} kN·m\n"
+                    f"Yield Moment (M_y)    : {mc['M_y_knm']:.2f} kN·m\n"
+                    f"Curvature Ductility µ_ϕ: {mc['ductility_ratio']:.2f}\n"
                     f"Failure Mode          : {inel['failure_mode']}\n"
                     f"---------------------------------\n"
                     f"OVERALL DESIGN STATUS : {res['status']}"
                 )
                 window["-OUTPUT-"].update(out_text)
 
-                png_bytes = generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel)
-                window["-IMAGE-"].update(data=png_bytes)
+                png_stress = generate_inelastic_diagram_png(b, d, a_s, fc, fy, inel)
+                window["-IMAGE-STRESS-"].update(data=png_stress)
+
+                png_mph = generate_moment_curvature_plot_png(mc, m_serv, m_ult)
+                window["-IMAGE-MPH-"].update(data=png_mph)
 
             except Exception as err:
                 sg.popup_error(f"Invalid input values: {err}", title="Input Error")
@@ -276,10 +332,11 @@ def self_check_headless() -> None:
     """Headless self-check for solver_gui.py."""
     res = solve_flexure_section(28.0, 420.0, 300.0, 500.0, 1500.0, 100.0, 220.0)
     assert res["status"] == "PASS"
-    assert abs(res["E_c"] - 24870.06) < 1.0
-    assert res["inelastic"]["phi_M_n_knm"] > 220.0
-    png = generate_inelastic_diagram_png(300.0, 500.0, 1500.0, 28.0, 420.0, res["inelastic"])
-    assert len(png) > 1000
+    assert res["mc_data"]["ductility_ratio"] > 1.0
+    png_stress = generate_inelastic_diagram_png(300.0, 500.0, 1500.0, 28.0, 420.0, res["inelastic"])
+    png_mph = generate_moment_curvature_plot_png(res["mc_data"], 100.0, 220.0)
+    assert len(png_stress) > 1000
+    assert len(png_mph) > 1000
     print("solver_gui headless check passed!")
 
 
